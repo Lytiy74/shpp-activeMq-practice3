@@ -11,12 +11,12 @@ import java.time.LocalDate;
 public class UserPojo {
     @NotNull
     @Length(min = 7)
-    @Pattern(regexp = "(?i).*a.*")
+    @Pattern(regexp = "(?i).*a.*", message = "Name must contain at least one letter \"a\"")
     private String name;
     @NotNull
     @CheckEddr(message = "Invalid eddr number")
     private String eddr;
-    @Min(value = 10)
+    @Min(value = 10, message = "Count must be >= 10")
     private int count;
     @NotNull
     private LocalDate date;
