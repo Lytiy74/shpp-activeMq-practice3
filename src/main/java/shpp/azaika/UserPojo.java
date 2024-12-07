@@ -43,4 +43,13 @@ public class UserPojo {
     public LocalDate getDate() {
         return date;
     }
+
+    @Override
+    public String toString() {
+        return "UserPojo{" + "name='" + name + '\'' +
+                ", eddr='" + eddr + '\'' +
+                ", count=" + count +
+                ", date=" + date +
+                '}';
+    }
 }
