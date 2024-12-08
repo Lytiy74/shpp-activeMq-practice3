@@ -11,7 +11,7 @@ import java.time.LocalDate;
 public class UserPojo {
     @NotNull
     @Length(min = 7)
-    @Pattern(regexp = "(?i).*a.*")
+    @Pattern(regexp = "(?iu).*[aа].*")
     private String name;
     @NotNull
     @CheckEddr(message = "Invalid eddr number")
@@ -20,6 +20,9 @@ public class UserPojo {
     private int count;
     @NotNull
     private LocalDate date;
+
+    public UserPojo() {
+    }
 
     public UserPojo(String name, String eddr, int count, LocalDate date) {
         this.name = name;
