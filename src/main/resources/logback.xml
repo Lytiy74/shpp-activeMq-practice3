@@ -16,8 +16,8 @@
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} -%kvp- %msg%n</pattern>
         </encoder>
     </appender>
-    <root level="debug">
+    <logger name="shpp.azaika" level="DEBUG">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="FILE"/>
-    </root>
+    </logger>
 </configuration>
