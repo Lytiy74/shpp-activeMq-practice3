@@ -35,6 +35,7 @@ public final class Producer implements Runnable {
     public void run() {
         try (Connection connection = connectionFactory.createConnection();
              Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE)) {
+            connection.start();
             logger.info("Producer started");
             MessageProducer producer = getMessageProducer(session);
             for (int i = 0; i < counter; i++) {
