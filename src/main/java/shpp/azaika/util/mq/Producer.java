@@ -19,7 +19,9 @@ public final class Producer implements Runnable {
     private final ActiveMQConnectionFactory connectionFactory;
     private final UserPojoGenerator userPojoGenerator;
     private final ObjectMapper objectMapper;
-    private final int counter;
+    private final int qtyOfMessages;
+    private boolean running = true;
+    private static final String POISON_PILL = "POISON PILL";
 
     public Producer(PropertyManager properties, UserPojoGenerator userPojoGenerator, int qtyOfMessages) {
         this.properties = properties;
@@ -27,7 +29,7 @@ public final class Producer implements Runnable {
         this.userPojoGenerator = userPojoGenerator;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
-        this.counter = qtyOfMessages;
+        this.qtyOfMessages = qtyOfMessages;
         logger.debug("Producer initialized");
     }
 
@@ -38,16 +40,20 @@ public final class Producer implements Runnable {
             connection.start();
             logger.info("Producer started");
             MessageProducer producer = getMessageProducer(session);
-            for (int i = 0; i < counter; i++) {
+            for (int i = 0; i < qtyOfMessages && running; i++) {
                 TextMessage textMessage = getTextMessage(session);
                 producer.send(textMessage);
                 logger.info("Message {} sent to {}", textMessage.getText(), producer.getDestination());
             }
-            logger.info("Producer finished, total send messages = {}", counter);
         } catch (JMSException | JsonProcessingException e) {
             logger.error("Error producing message", e);
             throw new RuntimeException(e);
         }
+        logger.info("Producer stopped");
+    }
+
+    public void stop(){
+        this.running = false;
     }
 
     private MessageProducer getMessageProducer(Session session) throws JMSException {
