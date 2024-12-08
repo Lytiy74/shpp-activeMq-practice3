@@ -1,5 +1,6 @@
 package shpp.azaika;
 
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -8,6 +9,7 @@ import shpp.azaika.validation.constraints.CheckEddr;
 
 import java.time.LocalDate;
 
+@JsonPropertyOrder({ "name", "eddr", "count", "date" })
 public class UserPojo {
     @NotNull
     @Length(min = 7)
