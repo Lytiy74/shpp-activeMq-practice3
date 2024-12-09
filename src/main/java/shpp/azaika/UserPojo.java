@@ -13,7 +13,7 @@ import java.time.LocalDate;
 public class UserPojo {
     @NotNull
     @Length(min = 7)
-    @Pattern(regexp = "(?i).*a.*")
+    @Pattern(regexp = "(?iu).*[aа].*", message = "Name must contains at least one letter 'A'")
     private String name;
     @NotNull
     @CheckEddr(message = "Invalid eddr number")
