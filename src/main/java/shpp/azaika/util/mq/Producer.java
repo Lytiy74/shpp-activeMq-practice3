@@ -1,59 +1,39 @@
 package shpp.azaika.util.mq;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import shpp.azaika.UserPojo;
 import shpp.azaika.util.PropertyManager;
-import shpp.azaika.util.UserPojoGenerator;
 
 import javax.jms.*;
 
-public final class Producer implements Runnable {
+public final class Producer implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
     private final PropertyManager properties;
-    private final ActiveMQConnectionFactory connectionFactory;
-    private final UserPojoGenerator userPojoGenerator;
-    private final ObjectMapper objectMapper;
-    private final int qtyOfMessages;
-    private boolean running = true;
-    private static final String POISON_PILL = "POISON PILL";
+    private final MessageProducer messageProducer;
+    private final Session session;
+    private final Connection connection;
 
-    public Producer(PropertyManager properties, UserPojoGenerator userPojoGenerator, int qtyOfMessages) {
+    public Producer(PropertyManager properties) throws JMSException {
         this.properties = properties;
-        this.connectionFactory = new ActiveMQConnectionFactory(properties.getProperty("activemq.user"), properties.getProperty("activemq.pwd"), properties.getProperty("activemq.url"));
-        this.userPojoGenerator = userPojoGenerator;
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
-        this.qtyOfMessages = qtyOfMessages;
+        ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(properties.getProperty("activemq.user"), properties.getProperty("activemq.pwd"), properties.getProperty("activemq.url"));
+        connection = connectionFactory.createConnection();
+        session = connection.createSession();
+        messageProducer = getMessageProducer(session);
         logger.debug("Producer initialized");
     }
 
-    @Override
-    public void run() {
-        try (Connection connection = connectionFactory.createConnection();
-             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE)) {
-            connection.start();
-            logger.info("Producer started");
-            MessageProducer producer = getMessageProducer(session);
-            for (int i = 0; i < qtyOfMessages && running; i++) {
-                TextMessage textMessage = getTextMessage(session);
-                producer.send(textMessage);
-                logger.info("Message {} sent to {}", textMessage.getText(), producer.getDestination());
-            }
-        } catch (JMSException | JsonProcessingException e) {
-            logger.error("Error producing message", e);
-            throw new RuntimeException(e);
-        }
-        logger.info("Producer stopped");
+    public void sendTextMessage(String text) throws JMSException {
+        logger.info("Sending message {}", text);
+        TextMessage textMessage = session.createTextMessage(text);
+        messageProducer.send(textMessage);
     }
 
-    public void stop(){
-        this.running = false;
+    public void sendPoisonPill() throws JMSException {
+        logger.info("Sending POISON PILL");
+        TextMessage poisonPill = session.createTextMessage("POISON PILL");
+        messageProducer.send(poisonPill);
     }
 
     private MessageProducer getMessageProducer(Session session) throws JMSException {
@@ -63,17 +43,11 @@ public final class Producer implements Runnable {
         return producer;
     }
 
-    private TextMessage getTextMessage(Session session) throws JsonProcessingException, JMSException {
-        String userPojoString = getUserPojoString();
-        TextMessage textMessage = session.createTextMessage(userPojoString);
-        logger.debug("Message generated {}", userPojoString);
-        return textMessage;
-    }
 
-    private String getUserPojoString() throws JsonProcessingException {
-        UserPojo userPojo = userPojoGenerator.generate();
-        String userPojoString = objectMapper.writeValueAsString(userPojo);
-        return userPojoString;
+    @Override
+    public void close() throws JMSException {
+        connection.close();
+        session.close();
+        messageProducer.close();
     }
-
 }
