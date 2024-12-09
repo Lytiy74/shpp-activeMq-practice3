@@ -22,8 +22,9 @@ public class UserPojoValidationTest {
     @BeforeAll
     static void init(){
         Locale.setDefault(Locale.ENGLISH);
-        ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory();
-        validator = validatorFactory.getValidator();
+        try (ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory()) {
+            validator = validatorFactory.getValidator();
+        }
         eddrValidator = new CheckEddrValidator();
     }
 
