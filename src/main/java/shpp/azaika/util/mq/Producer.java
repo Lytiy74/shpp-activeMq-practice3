@@ -14,6 +14,7 @@ public final class Producer implements AutoCloseable {
     private final MessageProducer messageProducer;
     private final Session session;
     private final Connection connection;
+    public static final String POISON_PILL = "POISON PILL 'DUDE STOP!'";
 
     public Producer(PropertyManager properties) throws JMSException {
         this.properties = properties;
@@ -32,7 +33,7 @@ public final class Producer implements AutoCloseable {
 
     public void sendPoisonPill() throws JMSException {
         logger.info("Sending POISON PILL");
-        TextMessage poisonPill = session.createTextMessage("POISON PILL");
+        TextMessage poisonPill = session.createTextMessage(POISON_PILL);
         messageProducer.send(poisonPill);
     }
 
