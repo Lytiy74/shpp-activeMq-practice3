@@ -16,80 +16,97 @@ import shpp.azaika.UserPojo;
 import shpp.azaika.util.PropertyManager;
 
 import javax.jms.*;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Set;
 
-public final class Consumer implements Runnable {
+public final class Consumer implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Consumer.class);
     private final PropertyManager properties;
-    private final ActiveMQConnectionFactory connectionFactory;
-    private final ObjectMapper objectMapper;
-    private final CsvMapper csvMapper;
+    private final Connection connection;
+    private final Session session;
+    private final MessageConsumer messageConsumer;
+    private boolean run;
 
-    public Consumer(PropertyManager properties) {
+    public Consumer(PropertyManager properties) throws JMSException {
         this.properties = properties;
-        this.connectionFactory = new ActiveMQConnectionFactory(properties.getProperty("activemq.user"), properties.getProperty("activemq.pwd"), properties.getProperty("activemq.url"));
-        this.objectMapper = new ObjectMapper();
-        this.objectMapper.registerModule(new JavaTimeModule());
-        this.csvMapper = new CsvMapper();
-        this.csvMapper.registerModule(new JavaTimeModule());
+        ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(properties.getProperty("activemq.user"), properties.getProperty("activemq.pwd"), properties.getProperty("activemq.url"));
+        connection = connectionFactory.createConnection();
+        session = connection.createSession();
+        messageConsumer = getMessageConsumer(session);
+        run = true;
         logger.debug("Consumer initialized");
     }
 
-    @Override
-    public void run() {
-        try (Connection connection = connectionFactory.createConnection();
-             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE)) {
-            logger.debug("Consumer started");
-            connection.start();
-            MessageConsumer consumer = session.createConsumer(session.createQueue(properties.getProperty("activemq.queue")));
-            while (true) {
-                Message receive = consumer.receive(5000);
-                if (receive != null) {
-                    handleMessage(receive);
-                    continue;
-                }
-                break;
-            }
-        } catch (JMSException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+
+    private MessageConsumer getMessageConsumer(Session session) throws JMSException {
+        Destination destination = session.createQueue(properties.getProperty("activemq.queue"));
+        return session.createConsumer(destination);
+    }
+
+    public void start() throws JMSException, IOException {
+        connection.start();
+        while (run){
+            Message receive = messageConsumer.receive();
+            if (receive != null) messageHandler(receive);
         }
     }
 
-    private void handleMessage(Message receive) throws JMSException, IOException {
-        TextMessage textMessage = (TextMessage) receive;
-        logger.debug("Message received: {}", textMessage.getText());
-        UserPojo userPojo = objectMapper.readValue(textMessage.getText(), UserPojo.class);
-        validateUserPojo(userPojo);
+    private void messageHandler(Message message) throws JMSException, IOException {
+        if (message instanceof TextMessage){
+            String text = ((TextMessage) message).getText();
+            if (text.equals(Producer.POISON_PILL)) {
+                run = false;
+                return;
+            }
+            validateMessage(text);
+            return;
+        }
+        throw new IllegalArgumentException();
     }
 
-    private void validateUserPojo(UserPojo userPojo) throws IOException {
-        logger.debug("Validating user pojo: {}", userPojo);
-        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
-            Validator validator = factory.getValidator();
-            Set<ConstraintViolation<UserPojo>> violations = validator.validate(userPojo);
-            if (!violations.isEmpty()) {
-                logger.error("UserPojo {} validation failed: {}", userPojo, violations);
-                writeToFile("invalid.csv", userPojo);
-            } else {
-                logger.debug("UserPojo {} validated", userPojo);
-                writeToFile("valid.csv", userPojo);
-            }
+    private void validateMessage(String text) throws IOException {
+        UserPojo userPojo = mapTextToUserPojo(text);
+
+        Set<ConstraintViolation<UserPojo>> violations = getViolation(userPojo);
+        if (violations.isEmpty()){
+           writeToFile("valid.csv",userPojo);
+        }else {
+            writeToFile("invalid.csv",userPojo);
         }
     }
 
     private void writeToFile(String fileName, UserPojo userPojo) throws IOException {
         logger.debug("Writing to {}", fileName);
+        CsvMapper csvMapper = new CsvMapper();
+        csvMapper.registerModule(new JavaTimeModule());
         CsvSchema schema = csvMapper.schemaFor(UserPojo.class);
         FileOutputStream out = new FileOutputStream(fileName, true);
         csvMapper.writer(schema).writeValue(out, userPojo);
         out.close();
         logger.debug("Written to {}", fileName);
+
     }
 
+    private static Set<ConstraintViolation<UserPojo>> getViolation(UserPojo userPojo) {
+        ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory();
+        Validator validator = validatorFactory.getValidator();
+        Set<ConstraintViolation<UserPojo>> validate = validator.validate(userPojo);
+        return validate;
+    }
 
+    private static UserPojo mapTextToUserPojo(String text) throws JsonProcessingException {
+        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        UserPojo userPojo = objectMapper.readValue(text, UserPojo.class);
+        return userPojo;
+    }
+
+    @Override
+    public void close() throws JMSException {
+        connection.close();
+        session.close();
+        messageConsumer.close();
+    }
 }
