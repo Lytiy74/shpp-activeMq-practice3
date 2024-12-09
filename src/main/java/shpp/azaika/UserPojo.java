@@ -1,5 +1,6 @@
 package shpp.azaika;
 
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -8,10 +9,11 @@ import shpp.azaika.validation.constraints.CheckEddr;
 
 import java.time.LocalDate;
 
+@JsonPropertyOrder({ "name", "eddr", "count", "date" })
 public class UserPojo {
     @NotNull
     @Length(min = 7)
-    @Pattern(regexp = "(?i).*a.*", message = "Name must contain at least one letter \"a\"")
+    @Pattern(regexp = "(?i).*a.*")
     private String name;
     @NotNull
     @CheckEddr(message = "Invalid eddr number")
@@ -20,6 +22,9 @@ public class UserPojo {
     private int count;
     @NotNull
     private LocalDate date;
+
+    public UserPojo() {
+    }
 
     public UserPojo(String name, String eddr, int count, LocalDate date) {
         this.name = name;
@@ -42,5 +47,14 @@ public class UserPojo {
 
     public LocalDate getDate() {
         return date;
+    }
+
+    @Override
+    public String toString() {
+        return "UserPojo{" + "name='" + name + '\'' +
+                ", eddr='" + eddr + '\'' +
+                ", count=" + count +
+                ", date=" + date +
+                '}';
     }
 }
