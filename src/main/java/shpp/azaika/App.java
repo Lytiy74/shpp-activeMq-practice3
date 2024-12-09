@@ -1,67 +1,63 @@
 package shpp.azaika;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import shpp.azaika.util.PropertyManager;
 import shpp.azaika.util.UserPojoGenerator;
 import shpp.azaika.util.mq.Consumer;
 import shpp.azaika.util.mq.Producer;
 
+import javax.jms.JMSException;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 public class App {
-    public static void main(String[] args) throws InterruptedException, IOException {
+    private static final Logger logger = LoggerFactory.getLogger(App.class);
+
+    public static void main(String[] args) throws IOException {
         PropertyManager propertyManager = new PropertyManager("app.properties");
 
-        List<Producer> producers = new ArrayList<>();
-        List<Consumer> consumers = new ArrayList<>();
-        List<Thread> threadArrayList = new ArrayList<>();
+        int n = Integer.parseInt(args[0]);
 
-        int msgs = Integer.parseInt(System.getProperty("N"));
-        int threads = Integer.parseInt(System.getProperty("threads"));
+        int timeForGenerationInSec = Integer.parseInt(propertyManager.getProperty("generation.duration"));
 
-        int msgsPerThread = msgs / threads;
-        int remainingMsgs = msgs % threads;
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
 
-        for (int i = 0; i < threads; i++) {
-            int msgsForThisThread = msgsPerThread + (i < remainingMsgs ? 1 : 0);
+        int sendedMessages = 0;
 
-            producers.add(createProducer(propertyManager, msgsForThisThread));
-            threadArrayList.add(startThread(producers.get(i)));
-
-            consumers.add(createConsumer(propertyManager));
-            threadArrayList.add(startThread(consumers.get(i)));
+        long startAt = System.currentTimeMillis();
+        try (Producer producer = new Producer(propertyManager)) {
+            for (int i = 0; i < n; i++) {
+                if (System.currentTimeMillis() - startAt <= timeForGenerationInSec) {
+                    String userPojoJsonString = getUserPojoJsonString();
+                    producer.sendTextMessage(userPojoJsonString);
+                    sendedMessages++;
+                    continue;
+                }
+                producer.sendPoisonPill();
+                break;
+            }
+        } catch (JMSException e) {
+            throw new RuntimeException(e);
         }
+        double wastedTimeInSeconds = (double) (System.currentTimeMillis() - startAt) / 1000;
+        double sendingMps = (sendedMessages / wastedTimeInSeconds);
+        logger.info("WASTED TIME {}s",wastedTimeInSeconds);
+        logger.info("TOTAL SEND MESSAGES  {}", sendedMessages);
+        logger.info("SENDING MESSAGE PER SECOND {}", sendingMps);
 
-        int millis = Integer.parseInt(propertyManager.getProperty("generation.duration"));
-        Thread.sleep(millis);
-
-        stopProducers(producers);
-
-        joinThreads(threadArrayList);
-    }
-
-    private static Producer createProducer(PropertyManager propertyManager, int msgs) {
-        return new Producer(propertyManager, new UserPojoGenerator(), msgs);
-    }
-
-    private static Consumer createConsumer(PropertyManager propertyManager) {
-        return new Consumer(propertyManager);
-    }
-
-    private static void stopProducers(List<Producer> producers) {
-        producers.forEach(Producer::stop);
-    }
-
-    private static void joinThreads(List<Thread> threads) throws InterruptedException {
-        for (Thread thread : threads) {
-            thread.join();
+        try(Consumer consumer = new Consumer(propertyManager)){
+            consumer.start();
+        } catch (JMSException e) {
+            throw new RuntimeException(e);
         }
     }
 
-    private static Thread startThread(Runnable task) {
-        Thread thread = new Thread(task);
-        thread.start();
-        return thread;
+    private static String getUserPojoJsonString() throws JsonProcessingException {
+        UserPojo userPojo = new UserPojoGenerator().generate();
+        return new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(userPojo);
     }
 }
