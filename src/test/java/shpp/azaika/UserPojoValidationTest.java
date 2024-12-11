@@ -7,6 +7,7 @@ import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import shpp.azaika.pojo.UserPojo;
 import shpp.azaika.validation.constraints.constraintvalidators.CheckEddrValidator;
 
 import java.time.LocalDate;
