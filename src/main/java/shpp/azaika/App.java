@@ -32,12 +32,12 @@ public class App {
         String userName = propertyManager.getProperty("activemq.user");
         String userPassword = propertyManager.getProperty("activemq.pwd");
         String urlMq = propertyManager.getProperty("activemq.url");
-        String queueName = propertyManager.getProperty("activemq.queue");
+        String destinationName = propertyManager.getProperty("activemq.queue");
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(userName, userPassword, urlMq);
 
         StopWatch stopWatch = new StopWatch(true);
         try (Producer producer = new Producer(connectionFactory)) {
-            producer.connect(queueName);
+            producer.connect(destinationName);
             for (int i = 0; i < n && stopWatch.taken() < timeForGenerationInSec; i++) {
                 String userPojoJsonString = getUserPojoJsonString();
                 producer.sendTextMessage(userPojoJsonString);
@@ -54,7 +54,8 @@ public class App {
         logger.info("TOTAL SEND MESSAGES  {}", sendedMessages);
         logger.info("SENDING MESSAGE PER SECOND {}", sendingMps);
 
-        try (Consumer consumer = new Consumer(propertyManager)) {
+        try (Consumer consumer = new Consumer(connectionFactory, "valid.csv", "invalid.csv")) {
+            consumer.connect(destinationName);
             consumer.start();
         } catch (JMSException e) {
             throw new RuntimeException(e);
