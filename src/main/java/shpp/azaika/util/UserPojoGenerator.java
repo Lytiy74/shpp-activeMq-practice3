@@ -2,7 +2,7 @@ package shpp.azaika.util;
 
 import net.datafaker.Faker;
 import net.datafaker.idnumbers.UkrainianIdNumber;
-import shpp.azaika.UserPojo;
+import shpp.azaika.pojo.UserPojo;
 
 import java.time.LocalDate;
 import java.util.Locale;
