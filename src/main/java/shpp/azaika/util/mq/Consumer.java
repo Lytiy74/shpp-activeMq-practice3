@@ -14,16 +14,16 @@ import org.slf4j.LoggerFactory;
 import shpp.azaika.UserPojo;
 
 import javax.jms.*;
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.Set;
 
 public final class Consumer implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Consumer.class);
+    private final ObjectMapper objectMapper;
     private final ActiveMQConnectionFactory connectionFactory;
     private final Validator validator;
+    private final CsvMapper csvMapper;
     private Connection connection;
     private Session session;
     private MessageConsumer messageConsumer;
@@ -32,7 +32,10 @@ public final class Consumer implements AutoCloseable {
     private final String validFileName;
     private final String invalidFileName;
 
-    public Consumer(ActiveMQConnectionFactory connectionFactory, String validFileName, String invalidFileName) {
+    private final BufferedOutputStream outputStreamForValid;
+    private final BufferedOutputStream outputStreamForInvalid;
+
+    public Consumer(ActiveMQConnectionFactory connectionFactory, String validFileName, String invalidFileName) throws FileNotFoundException {
         if (connectionFactory == null) {
             throw new IllegalArgumentException("ConnectionFactory must not be null");
         }
@@ -41,6 +44,11 @@ public final class Consumer implements AutoCloseable {
         this.isRunning = true;
         this.validFileName = validFileName;
         this.invalidFileName = invalidFileName;
+        this.csvMapper = (CsvMapper) new CsvMapper().registerModule(new JavaTimeModule());
+        this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        this.outputStreamForInvalid = new BufferedOutputStream(new FileOutputStream(validFileName, true));
+        this.outputStreamForValid = new BufferedOutputStream(new FileOutputStream(invalidFileName, true));
+
         logger.debug("Consumer initialized");
     }
 
@@ -95,28 +103,23 @@ public final class Consumer implements AutoCloseable {
             Set<ConstraintViolation<UserPojo>> violations = validator.validate(userPojo);
 
             if (violations.isEmpty()) {
-                writeToFile(validFileName, userPojo);
+                logger.info("Write {} to file {}",userPojo, validFileName);
+                writeToFile(outputStreamForValid, userPojo);
             } else {
-                writeToFile(invalidFileName, userPojo);
+                logger.info("Write {} to file {}",userPojo, invalidFileName);
+                writeToFile(outputStreamForInvalid, userPojo);
             }
         } catch (JsonProcessingException e) {
             logger.error("Failed to parse JSON message: {}", text, e);
         }
     }
 
-    private void writeToFile(String fileName, UserPojo userPojo) throws IOException {
-        logger.debug("Writing to {}", fileName);
-        try (BufferedOutputStream out = new BufferedOutputStream(new FileOutputStream(fileName, true))) {
-            CsvMapper csvMapper = new CsvMapper();
-            csvMapper.registerModule(new JavaTimeModule());
-            CsvSchema schema = csvMapper.schemaFor(UserPojo.class);
-            csvMapper.writer(schema).writeValue(out, userPojo);
-        }
-        logger.debug("Written to {}", fileName);
+    private void writeToFile(OutputStream outputStream, UserPojo userPojo) throws IOException {
+        CsvSchema schema = csvMapper.schemaFor(UserPojo.class);
+        csvMapper.writer(schema).writeValue(outputStream, userPojo);
     }
 
-    private static UserPojo mapTextToUserPojo(String text) throws JsonProcessingException {
-        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private UserPojo mapTextToUserPojo(String text) throws JsonProcessingException {
         return objectMapper.readValue(text, UserPojo.class);
     }
 
