@@ -1,4 +1,4 @@
-package shpp.azaika;
+package shpp.azaika.pojo;
 
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.validation.constraints.Min;
