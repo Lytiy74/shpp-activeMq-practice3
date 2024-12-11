@@ -24,8 +24,8 @@ public final class Producer implements AutoCloseable {
         this.connectionFactory = connectionFactory;
     }
 
-    public void connect(String queueName) throws JMSException {
-        if (queueName == null || queueName.isEmpty()) {
+    public void connect(String destinationName) throws JMSException {
+        if (destinationName == null || destinationName.isEmpty()) {
             throw new IllegalArgumentException("Queue name must not be null or empty");
         }
 
@@ -33,7 +33,7 @@ public final class Producer implements AutoCloseable {
             connection = connectionFactory.createConnection();
             connection.start();
             session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            messageProducer = createMessageProducer(session, queueName);
+            messageProducer = createMessageProducer(session, destinationName);
         } catch (JMSException e) {
             close();
             throw e;
