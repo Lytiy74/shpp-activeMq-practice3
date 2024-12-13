@@ -70,7 +70,7 @@ public class UserPojoValidationTest {
 
         @Test
         void testValidationDateFormatInvalid() {
-            String eddr = "05200412-26583";
+            String eddr = "052200412-26583";
             assertFalse(eddrValidator.isDateValid(eddr));
         }
     }
