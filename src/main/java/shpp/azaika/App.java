@@ -3,12 +3,17 @@ package shpp.azaika;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.util.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import shpp.azaika.pojo.UserPojo;
-import shpp.azaika.util.*;
+import shpp.azaika.util.CsvWriter;
+import shpp.azaika.util.MessageHandler;
+import shpp.azaika.util.PropertyManager;
+import shpp.azaika.util.UserPojoGenerator;
 import shpp.azaika.util.mq.Consumer;
 import shpp.azaika.util.mq.Producer;
 
@@ -52,9 +57,9 @@ public class App {
             throw new RuntimeException(e);
         }
 
-        long wastedTimeInSeconds = TimeUnit.SECONDS.convert(stopWatch.stop(), TimeUnit.MILLISECONDS);
-        double sendingMps = ((double) sendedMessages / wastedTimeInSeconds);
-        logger.info("WASTED TIME {}s", wastedTimeInSeconds);
+        long spentTimeInSeconds = TimeUnit.SECONDS.convert(stopWatch.stop(), TimeUnit.MILLISECONDS);
+        double sendingMps = ((double) sendedMessages / spentTimeInSeconds);
+        logger.info("WASTED TIME {}s", spentTimeInSeconds);
         logger.info("TOTAL SEND MESSAGES  {}", sendedMessages);
         logger.info("SENDING MESSAGE PER SECOND {}", sendingMps);
     }
@@ -64,7 +69,8 @@ public class App {
         int receivedMessages = 0;
         double receivingMps = 0;
         ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        MessageHandler messageHandler = new MessageHandler(mapper, new UserValidation(), new CsvWriter("valid.csv"), new CsvWriter("invalid.csv"));
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        MessageHandler messageHandler = new MessageHandler(mapper, validator, new CsvWriter("valid.csv"), new CsvWriter("invalid.csv"));
         try (Consumer consumer = new Consumer(connectionFactory, messageHandler)) {
             consumer.connect(destinationName);
             stopWatch.restart();

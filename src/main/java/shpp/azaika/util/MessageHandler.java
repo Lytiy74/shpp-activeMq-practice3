@@ -1,6 +1,7 @@
 package shpp.azaika.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.validation.Validator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import shpp.azaika.pojo.UserPojo;
@@ -14,11 +15,11 @@ import java.io.IOException;
 public class MessageHandler {
     private static final Logger logger = LoggerFactory.getLogger(MessageHandler.class);
     private final ObjectMapper mapper;
-    private final UserValidation validator;
+    private final Validator validator;
     private final Writer validWriter;
     private final Writer invalidWriter;
 
-    public MessageHandler(ObjectMapper mapper, UserValidation validator, Writer writerForValid, Writer writerForInvalid) {
+    public MessageHandler(ObjectMapper mapper, Validator validator, Writer writerForValid, Writer writerForInvalid) {
         this.mapper = mapper;
         this.validator = validator;
         this.validWriter = writerForValid;
@@ -36,7 +37,7 @@ public class MessageHandler {
     public void handleTextMessage(TextMessage message) throws JMSException, IOException {
         String textFromMessage = message.getText();
         UserPojo userPojo = mapper.readValue(textFromMessage, UserPojo.class);
-        boolean isValid = validator.isValid(userPojo);
+        boolean isValid = validator.validate(userPojo).isEmpty();
         if (isValid) {
             logger.info("User is Valid, Write to Valid file");
             validWriter.write(userPojo);
