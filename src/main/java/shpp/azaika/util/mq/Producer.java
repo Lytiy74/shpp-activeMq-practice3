@@ -4,8 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.jms.*;
+import java.util.Objects;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
-public final class Producer implements AutoCloseable {
+public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
@@ -16,24 +22,29 @@ public final class Producer implements AutoCloseable {
     public static final String POISON_PILL = "POISON PILL 'DUDE STOP!'";
 
     private final ConnectionFactory connectionFactory;
+    private final BlockingQueue<String> messageQueueSource;
 
-    public Producer(ConnectionFactory connectionFactory) {
+    private final AtomicInteger messagesSent = new AtomicInteger(0);
+
+
+    public Producer(ConnectionFactory connectionFactory, BlockingQueue<String> messageSourceQueue) {
         if (connectionFactory == null) {
             throw new IllegalArgumentException("ConnectionFactory must not be null");
         }
+        if (messageSourceQueue == null) {
+            throw new IllegalArgumentException("MessageQueueSource must not be null");
+        }
+        this.messageQueueSource = messageSourceQueue;
         this.connectionFactory = connectionFactory;
     }
 
     public void connect(String destinationName) throws JMSException {
-        if (destinationName == null || destinationName.isEmpty()) {
-            throw new IllegalArgumentException("Queue name must not be null or empty");
-        }
-
         try {
             connection = connectionFactory.createConnection();
             connection.start();
             session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-            messageProducer = createMessageProducer(session, destinationName);
+            Destination destination = session.createQueue(destinationName);
+            messageProducer = createMessageProducer(session, destination);
         } catch (JMSException e) {
             close();
             throw e;
@@ -41,12 +52,10 @@ public final class Producer implements AutoCloseable {
     }
 
     public void sendTextMessage(String text) throws JMSException {
-        if (text == null || text.isEmpty()) {
-            throw new IllegalArgumentException("Message text must not be null or empty");
-        }
         logger.info("Sending message: {}", text);
         TextMessage textMessage = session.createTextMessage(text);
         messageProducer.send(textMessage);
+        messagesSent.incrementAndGet();
     }
 
     public void sendPoisonPill() throws JMSException {
@@ -54,8 +63,7 @@ public final class Producer implements AutoCloseable {
         sendTextMessage(POISON_PILL);
     }
 
-    private MessageProducer createMessageProducer(Session session, String queueName) throws JMSException {
-        Destination destination = session.createQueue(queueName);
+    private MessageProducer createMessageProducer(Session session, Destination destination) throws JMSException {
         MessageProducer producer = session.createProducer(destination);
         producer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
         return producer;
@@ -71,4 +79,55 @@ public final class Producer implements AutoCloseable {
             logger.error("Error while closing JMS resources", e);
         }
     }
+
+    @Override
+    public Integer call() throws Exception {
+        try {
+            sendMessages();
+        } finally {
+            sendPoisonPill();
+            close();
+        }
+        return messagesSent.get();
+    }
+
+    private void sendMessages() {
+        Stream.generate(this::pollMessageWithHandling)
+                .takeWhile(Objects::nonNull)
+                .takeWhile(msg -> !Thread.currentThread().isInterrupted())
+                .forEach(this::processMessage);
+    }
+
+    private String pollMessageWithHandling() {
+        try {
+            return getStringFromQueue();
+        } catch (InterruptedException e) {
+            logger.info("Thread was interrupted during polling, exiting gracefully.");
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
+    private void processMessage(String polledText) {
+        try {
+            sendTextMessage(polledText);
+            if (messagesSent.get() % 1000 == 0) {
+                logger.info("Sent {} messages", messagesSent.get());
+            }
+        } catch (JMSException e) {
+            logger.error("Error sending message", e);
+        }
+    }
+
+
+    private String getStringFromQueue() throws InterruptedException {
+        String polledText = messageQueueSource.poll(5, TimeUnit.SECONDS);
+        logger.debug("Polled message: {}", polledText);
+        if (polledText == null) {
+            logger.debug("Polling timed out.");
+            return null;
+        }
+        return polledText;
+    }
+
 }
