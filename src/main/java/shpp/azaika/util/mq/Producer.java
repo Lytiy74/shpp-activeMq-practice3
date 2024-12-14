@@ -88,6 +88,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
             sendPoisonPill();
             close();
         }
+        logger.info(Thread.currentThread().getName() + " has been finished.");
         return messagesSent.get();
     }
 
@@ -121,7 +122,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
 
     private String getStringFromQueue() throws InterruptedException {
-        String polledText = messageQueueSource.poll(5, TimeUnit.SECONDS);
+        String polledText = messageQueueSource.poll(1, TimeUnit.SECONDS);
         logger.debug("Polled message: {}", polledText);
         if (polledText == null) {
             logger.debug("Polling timed out.");
