@@ -56,16 +56,16 @@ public class App {
         BlockingQueue<String> messageQueue = new ArrayBlockingQueue<>(queueCapacity);
 
         StopWatch generateMessagesStopWatch = new StopWatch(true);
-        generateMessages(messageCount, threadCount, messageQueue);
+        List<Future<Integer>> generateMessagesFutureList = generateMessages(messageCount, threadCount, messageQueue);
 
         StopWatch producersStopWatch = new StopWatch(true);
-        startProducers(threadCount, connectionFactory, messageQueue, destinationName);
+        List<Future<Integer>> producersFutureList = startProducers(threadCount, connectionFactory, messageQueue, destinationName);
 
         BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 10);
         BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 10);
 
         StopWatch consumersStopWatch = new StopWatch(true);
-        startConsumers(threadCount, connectionFactory, destinationName, validQueue, invalidQueue);
+        List<Future<Integer>> consumersFutureList = startConsumers(threadCount, connectionFactory, destinationName, validQueue, invalidQueue);
 
         startWriters(validQueue, invalidQueue);
 
@@ -74,11 +74,27 @@ public class App {
         shutdownExecutor(consumerExecutor, "Consumers", durationMillis, TimeUnit.MILLISECONDS);
         shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.MINUTES);
 
+        int generatedMessages = calculateSum(generateMessagesFutureList);
+        int producedMessage = calculateSum(producersFutureList);
+        int consumedMessage = calculateSum(consumersFutureList);
+
         logger.info("----------------------------PERFORMANCE----------------------------");
-        logPerformance("Message Generation",generateMessagesStopWatch.stop(), messageCount);
-        logPerformance("Message Sending (Producers)", producersStopWatch.stop(), messageCount);
-        logPerformance("Message Processing and Writing (Consumers/Writers)", consumersStopWatch.stop(), messageCount);
+        logPerformance("Message Generation",generateMessagesStopWatch.stop(), generatedMessages);
+        logPerformance("Message Sending (Producers)", producersStopWatch.stop(), producedMessage);
+        logPerformance("Message Processing and Writing (Consumers/Writers)", consumersStopWatch.stop(), consumedMessage);
         logPerformance("Total Execution Time", allProgramWatch.stop(), messageCount);
+    }
+    public static int calculateSum(List<Future<Integer>> futureList) {
+        return futureList.stream()
+                .mapToInt(future -> {
+                    try {
+                        return future.get();
+                    } catch (Exception e) {
+                        logger.error("Error retrieving result from Future: " + e.getMessage());
+                        return 0;
+                    }
+                })
+                .sum();
     }
 
     private static void shutdownExecutor(ExecutorService executor, String name, long timeout, TimeUnit unit) {
@@ -99,33 +115,36 @@ public class App {
 
     private static void logPerformance(String taskName, long durationMillis, int messageCount) {
         double durationSeconds = TimeUnit.MILLISECONDS.toSeconds(durationMillis);
-        double messagesPerSecond = messageCount / (durationSeconds > 0 ? durationSeconds : 1); // Avoid division by zero
-        logger.info("{} completed in {} seconds ({} messages/second)", taskName, durationSeconds, messagesPerSecond);
+        double messagesPerSecond = messageCount / (durationSeconds > 0 ? durationSeconds : 1);
+        logger.info("{} completed in {} seconds ({} messages/second) ({} total messages)", taskName, durationSeconds, messagesPerSecond, messageCount);
     }
 
-    private static void generateMessages(int messageCount, int threadCount, BlockingQueue<String> messageQueue) {
+    private static List<Future<Integer>> generateMessages(int messageCount, int threadCount, BlockingQueue<String> messageQueue) {
         int messagesPerThread = messageCount / threadCount;
         int remainingMessages = messageCount % threadCount;
+        List<Future<Integer>> futures = new ArrayList<>();
 
         messageGeneratorExecutor = Executors.newFixedThreadPool(threadCount);
         for (int i = 0; i < threadCount; i++) {
             int messagesForThisThread = messagesPerThread + (i == threadCount - 1 ? remainingMessages : 0);
-            messageGeneratorExecutor.submit(createMessageGeneratorTask(messagesForThisThread, messageQueue));
+            futures.add(messageGeneratorExecutor.submit(createMessageGeneratorTask(messagesForThisThread, messageQueue)));
         }
+        return futures;
     }
 
-    private static void startProducers(int threadCount, ActiveMQConnectionFactory connectionFactory, BlockingQueue<String> messageQueue, String destinationName) throws JMSException{
+    private static List<Future<Integer>> startProducers(int threadCount, ActiveMQConnectionFactory connectionFactory, BlockingQueue<String> messageQueue, String destinationName) throws JMSException{
         producersExecutor = Executors.newFixedThreadPool(threadCount);
-
+        List<Future<Integer>> futures = new ArrayList<>();
         for (int i = 0; i < threadCount; i++) {
             logger.info("Starting producer thread {}", i);
             Producer task = new Producer(connectionFactory, messageQueue);
             task.connect(destinationName);
-            producersExecutor.submit(task);
+            futures.add(producersExecutor.submit(task));
         }
+        return futures;
     }
 
-    private static void startConsumers(int threadCount, ActiveMQConnectionFactory connectionFactory, String destinationName, BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) throws JMSException {
+    private static List<Future<Integer>> startConsumers(int threadCount, ActiveMQConnectionFactory connectionFactory, String destinationName, BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) throws JMSException {
         consumerExecutor = Executors.newFixedThreadPool(threadCount);
         List<Future<Integer>> futures = new ArrayList<>();
 
@@ -137,6 +156,7 @@ public class App {
             task.connect(destinationName);
             futures.add(consumerExecutor.submit(task));
         }
+        return futures;
     }
 
     private static void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
@@ -180,8 +200,9 @@ public class App {
         });
     }
 
-    private static Runnable createMessageGeneratorTask(int messageCount, BlockingQueue<String> messageQueue) {
+    private static Callable<Integer> createMessageGeneratorTask(int messageCount, BlockingQueue<String> messageQueue) {
         return () -> {
+            int count = 0;
             logger.info("Starting message generation thread.");
             UserPojoGenerator userPojoGenerator = new UserPojoGenerator();
             ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -191,6 +212,7 @@ public class App {
                     UserPojo user = userPojoGenerator.generate();
                     messageQueue.put(objectMapper.writeValueAsString(user));
                     logger.debug("Generated message and added to queue: {}", user);
+                    count++;
                 } catch (JsonProcessingException | InterruptedException e) {
                     Thread.currentThread().interrupt();
                     logger.error("Error during message generation", e);
@@ -199,6 +221,7 @@ public class App {
             }
 
             logger.info("Finished message generation thread.");
+            return count;
         };
     }
 
