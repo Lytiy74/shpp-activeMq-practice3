@@ -18,79 +18,188 @@ import shpp.azaika.util.mq.Consumer;
 import shpp.azaika.util.mq.Producer;
 
 import javax.jms.JMSException;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
 
+/**
+ * Main application class for managing message generation, sending, and processing using ActiveMQ.
+ */
 public class App {
     private static final Logger logger = LoggerFactory.getLogger(App.class);
+    private static ExecutorService messageGeneratorExecutor;
+    private static ExecutorService producersExecutor;
+    private static ExecutorService consumerExecutor;
+    private static ExecutorService writerExecutor;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, JMSException {
+        StopWatch allProgramWatch = new StopWatch(true);
+        if (args.length < 1) {
+            logger.error("Please provide the number of messages to send as the first argument.");
+            System.exit(1);
+        }
 
         PropertyManager propertyManager = new PropertyManager("app.properties");
         String userName = propertyManager.getProperty("activemq.user");
         String userPassword = propertyManager.getProperty("activemq.pwd");
         String urlMq = propertyManager.getProperty("activemq.url");
         String destinationName = propertyManager.getProperty("activemq.queue");
+        long durationMillis = Long.parseLong(propertyManager.getProperty("generation.duration"));
+
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(userName, userPassword, urlMq);
-        long timeForGenerationInSec = Integer.parseInt(propertyManager.getProperty("generation.duration"));
 
-        int n = Integer.parseInt(args[0]);
-        StopWatch stopWatch = new StopWatch(true);
+        int messageCount = Integer.parseInt(args[0]);
+        int queueCapacity = 10_000;
+        int threadCount = 4;
 
-        producer(n, connectionFactory, destinationName, stopWatch, timeForGenerationInSec);
+        BlockingQueue<String> messageQueue = new ArrayBlockingQueue<>(queueCapacity);
 
-        consumer(connectionFactory, destinationName, stopWatch);
+        StopWatch generateMessagesStopWatch = new StopWatch(true);
+        generateMessages(messageCount, threadCount, messageQueue);
+
+        StopWatch producersStopWatch = new StopWatch(true);
+        startProducers(threadCount, connectionFactory, messageQueue, destinationName);
+
+        BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 10);
+        BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 10);
+
+        StopWatch consumersStopWatch = new StopWatch(true);
+        startConsumers(threadCount, connectionFactory, destinationName, validQueue, invalidQueue);
+
+        startWriters(validQueue, invalidQueue);
+
+        shutdownExecutor(messageGeneratorExecutor, "Message Generator", durationMillis, TimeUnit.MILLISECONDS);
+        shutdownExecutor(producersExecutor, "Producers", durationMillis, TimeUnit.MILLISECONDS);
+        shutdownExecutor(consumerExecutor, "Consumers", durationMillis, TimeUnit.MILLISECONDS);
+        shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.MINUTES);
+
+        logger.info("----------------------------PERFORMANCE----------------------------");
+        logPerformance("Message Generation",generateMessagesStopWatch.stop(), messageCount);
+        logPerformance("Message Sending (Producers)", producersStopWatch.stop(), messageCount);
+        logPerformance("Message Processing and Writing (Consumers/Writers)", consumersStopWatch.stop(), messageCount);
+        logPerformance("Total Execution Time", allProgramWatch.stop(), messageCount);
     }
 
-    private static void producer(int n, ActiveMQConnectionFactory connectionFactory, String destinationName, StopWatch stopWatch, long timeForGenerationInSec) throws JsonProcessingException {
-        int sendedMessages = 0;
-        try (Producer producer = new Producer(connectionFactory)) {
-            producer.connect(destinationName);
-            for (int i = 0; i < n && TimeUnit.SECONDS.convert(stopWatch.taken(),TimeUnit.MILLISECONDS) < timeForGenerationInSec; i++) {
-                String userPojoJsonString = getUserPojoJsonString();
-                producer.sendTextMessage(userPojoJsonString);
-                sendedMessages++;
+    private static void shutdownExecutor(ExecutorService executor, String name, long timeout, TimeUnit unit) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(timeout, unit)) {
+                logger.warn("{} threads did not finish in time. Forcing shutdown.", name);
+                executor.shutdownNow();
+            } else {
+                logger.info("{} shutdown successfully.", name);
             }
-            producer.sendPoisonPill();
-        } catch (JMSException e) {
-            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
+            logger.error("Waiting for {} threads to terminate was interrupted.", name, e);
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
         }
-
-        long spentTimeInSeconds = TimeUnit.SECONDS.convert(stopWatch.stop(), TimeUnit.MILLISECONDS);
-        double sendingMps = ((double) sendedMessages / spentTimeInSeconds);
-        logger.info("WASTED TIME {}s", spentTimeInSeconds);
-        logger.info("TOTAL SEND MESSAGES  {}", sendedMessages);
-        logger.info("SENDING MESSAGE PER SECOND {}", sendingMps);
     }
 
-    private static void consumer(ActiveMQConnectionFactory connectionFactory, String destinationName, StopWatch stopWatch) throws FileNotFoundException {
-        long wastedTimeInSeconds;
-        int receivedMessages = 0;
-        double receivingMps = 0;
-        ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
-        MessageHandler messageHandler = new MessageHandler(mapper, validator, new CsvWriter("valid.csv"), new CsvWriter("invalid.csv"));
-        try (Consumer consumer = new Consumer(connectionFactory, messageHandler)) {
-            consumer.connect(destinationName);
-            stopWatch.restart();
-            while (true) {
-                boolean processed = consumer.processNextMessage();
-                if (!processed) break;
-                receivedMessages++;
+    private static void logPerformance(String taskName, long durationMillis, int messageCount) {
+        double durationSeconds = TimeUnit.MILLISECONDS.toSeconds(durationMillis);
+        double messagesPerSecond = messageCount / (durationSeconds > 0 ? durationSeconds : 1); // Avoid division by zero
+        logger.info("{} completed in {} seconds ({} messages/second)", taskName, durationSeconds, messagesPerSecond);
+    }
+
+    private static void generateMessages(int messageCount, int threadCount, BlockingQueue<String> messageQueue) {
+        int messagesPerThread = messageCount / threadCount;
+        int remainingMessages = messageCount % threadCount;
+
+        messageGeneratorExecutor = Executors.newFixedThreadPool(threadCount);
+        for (int i = 0; i < threadCount; i++) {
+            int messagesForThisThread = messagesPerThread + (i == threadCount - 1 ? remainingMessages : 0);
+            messageGeneratorExecutor.submit(createMessageGeneratorTask(messagesForThisThread, messageQueue));
+        }
+    }
+
+    private static void startProducers(int threadCount, ActiveMQConnectionFactory connectionFactory, BlockingQueue<String> messageQueue, String destinationName) throws JMSException{
+        producersExecutor = Executors.newFixedThreadPool(threadCount);
+
+        for (int i = 0; i < threadCount; i++) {
+            logger.info("Starting producer thread {}", i);
+            Producer task = new Producer(connectionFactory, messageQueue);
+            task.connect(destinationName);
+            producersExecutor.submit(task);
+        }
+    }
+
+    private static void startConsumers(int threadCount, ActiveMQConnectionFactory connectionFactory, String destinationName, BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) throws JMSException {
+        consumerExecutor = Executors.newFixedThreadPool(threadCount);
+        List<Future<Integer>> futures = new ArrayList<>();
+
+        for (int i = 0; i < threadCount; i++) {
+            ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+            Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+
+            Consumer task = new Consumer(connectionFactory, new MessageHandler(objectMapper, validator, validQueue, invalidQueue));
+            task.connect(destinationName);
+            futures.add(consumerExecutor.submit(task));
+        }
+    }
+
+    private static void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
+        writerExecutor = Executors.newFixedThreadPool(2);
+        int timeoutSeconds = 1;
+
+        writerExecutor.submit(() -> {
+            try (CsvWriter validWriter = new CsvWriter("valid_users.csv")) {
+                while (true) {
+                    UserPojo userPojo = validQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
+                    if (userPojo == null) {
+                        logger.info("Valid queue writer stopped after no data for {} seconds.", timeoutSeconds);
+                        break;
+                    }
+                    validWriter.write(userPojo);
+                }
+            } catch (IOException e) {
+                logger.error("Error writing to valid_users.csv", e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.info("Valid queue writer was interrupted.");
             }
-        } catch (JMSException e) {
-            throw new RuntimeException(e);
-        }
-        wastedTimeInSeconds = TimeUnit.SECONDS.convert(stopWatch.stop(), TimeUnit.MILLISECONDS);
-        receivingMps = ((double)receivedMessages/wastedTimeInSeconds);
-        logger.info("WASTED TIME {}s", wastedTimeInSeconds);
-        logger.info("TOTAL RECEIVED MESSAGES  {}", receivedMessages);
-        logger.info("RECEIVING MESSAGE PER SECOND {}", receivingMps);
+        });
+
+        writerExecutor.submit(() -> {
+            try (CsvWriter invalidWriter = new CsvWriter("invalid_users.csv")) {
+                while (true) {
+                    UserPojo userPojo = invalidQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
+                    if (userPojo == null) {
+                        logger.info("Invalid queue writer stopped after no data for {} seconds.", timeoutSeconds);
+                        break;
+                    }
+                    invalidWriter.write(userPojo);
+                }
+            } catch (IOException e) {
+                logger.error("Error writing to invalid_users.csv", e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.info("Invalid queue writer was interrupted.");
+            }
+        });
     }
 
-    private static String getUserPojoJsonString() throws JsonProcessingException {
-        UserPojo userPojo = new UserPojoGenerator().generate();
-        return new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(userPojo);
+    private static Runnable createMessageGeneratorTask(int messageCount, BlockingQueue<String> messageQueue) {
+        return () -> {
+            logger.info("Starting message generation thread.");
+            UserPojoGenerator userPojoGenerator = new UserPojoGenerator();
+            ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+            for (int i = 0; i < messageCount; i++) {
+                try {
+                    UserPojo user = userPojoGenerator.generate();
+                    messageQueue.put(objectMapper.writeValueAsString(user));
+                    logger.debug("Generated message and added to queue: {}", user);
+                } catch (JsonProcessingException | InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.error("Error during message generation", e);
+                    break;
+                }
+            }
+
+            logger.info("Finished message generation thread.");
+        };
     }
+
 }
