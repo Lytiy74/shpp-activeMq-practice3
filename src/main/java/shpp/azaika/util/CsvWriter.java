@@ -10,21 +10,26 @@ import shpp.azaika.pojo.UserPojo;
 
 import java.io.*;
 
-
-public class CsvWriter implements Writer {
+public class CsvWriter implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(CsvWriter.class);
     private final CsvMapper csvMapper;
     private final FileOutputStream outputStream;
+
     public CsvWriter(String fileName) throws FileNotFoundException {
-        this.outputStream = new FileOutputStream(fileName,true);
+        this.outputStream = new FileOutputStream(fileName, true);
         this.csvMapper = (CsvMapper) new CsvMapper().registerModule(new JavaTimeModule());
         this.csvMapper.configure(JsonGenerator.Feature.AUTO_CLOSE_TARGET, false);
-        logger.debug("CsvWriter initialized");
+        logger.debug("CsvWriter initialized for file: {}", fileName);
+    }
+
+    public void write(UserPojo userPojo) throws IOException {
+        CsvSchema schema = csvMapper.schemaFor(UserPojo.class).withColumnSeparator(',');
+        csvMapper.writer(schema).writeValue(outputStream, userPojo);
     }
 
     @Override
-    public void write(UserPojo userPojo) throws IOException {
-        CsvSchema schema = csvMapper.schemaFor(UserPojo.class);
-        csvMapper.writer(schema).writeValue(outputStream,userPojo);
+    public void close() throws IOException {
+        outputStream.close();
+        logger.debug("CsvWriter closed");
     }
 }
