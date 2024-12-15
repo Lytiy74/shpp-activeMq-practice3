@@ -113,9 +113,6 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     private void processMessage(String polledText) {
         try {
             sendTextMessage(polledText);
-            if (messagesSent.get() % 1000 == 0) {
-                logger.info("Sent {} messages", messagesSent.get());
-            }
         } catch (JMSException e) {
             logger.error("Error sending message", e);
         }

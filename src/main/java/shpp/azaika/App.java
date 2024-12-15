@@ -23,9 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 
-/**
- * Main application class for managing message generation, sending, and processing using ActiveMQ.
- */
 public class App {
     private static final Logger logger = LoggerFactory.getLogger(App.class);
     private static ExecutorService messageGeneratorExecutor;
@@ -51,22 +48,26 @@ public class App {
 
         int messageCount = Integer.parseInt(args[0]);
         int queueCapacity = 10_000;
-        int threadCount = 4;
+        int threadCount = Integer.parseInt(propertyManager.getProperty("threads"));
 
         BlockingQueue<String> messageQueue = new ArrayBlockingQueue<>(queueCapacity);
 
         StopWatch generateMessagesStopWatch = new StopWatch(true);
+        logger.info("Start generated Messaged main");
         List<Future<Integer>> generateMessagesFutureList = generateMessages(messageCount, threadCount, messageQueue);
 
         StopWatch producersStopWatch = new StopWatch(true);
+        logger.info("Start producers main");
         List<Future<Integer>> producersFutureList = startProducers(threadCount, connectionFactory, messageQueue, destinationName);
 
         BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 10);
         BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 10);
 
         StopWatch consumersStopWatch = new StopWatch(true);
+        logger.info("Start consumers main");
         List<Future<Integer>> consumersFutureList = startConsumers(threadCount, connectionFactory, destinationName, validQueue, invalidQueue);
 
+        logger.info("Start writers main");
         startWriters(validQueue, invalidQueue);
 
         shutdownExecutor(messageGeneratorExecutor, "Message Generator", durationMillis, TimeUnit.MILLISECONDS);
@@ -160,7 +161,7 @@ public class App {
 
     private static void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
         writerExecutor = Executors.newFixedThreadPool(2);
-        int timeoutSeconds = 3;
+        int timeoutSeconds = 10;
 
         writerExecutor.submit(() -> {
             try (CsvWriter validWriter = new CsvWriter("valid_users.csv")) {
