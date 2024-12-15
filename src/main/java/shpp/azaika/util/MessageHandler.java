@@ -48,7 +48,6 @@ public class MessageHandler {
             validateAndRouteMessage(userPojo);
         } catch (IOException e) {
             logger.error("Failed to deserialize message content: {}", textFromMessage, e);
-            // Optionally route malformed messages to invalidQueue or log for further investigation.
         }
     }
 
@@ -64,9 +63,9 @@ public class MessageHandler {
     }
 
     private void logValidationErrors(UserPojo userPojo, Set<ConstraintViolation<UserPojo>> violations) {
-        logger.warn("Validation failed for UserPojo: {}", userPojo);
+        logger.debug("Validation failed for UserPojo: {}", userPojo);
         for (ConstraintViolation<UserPojo> violation : violations) {
-            logger.warn("Property '{}' {} (invalid value: {})",
+            logger.debug("Property '{}' {} (invalid value: {})",
                     violation.getPropertyPath(),
                     violation.getMessage(),
                     violation.getInvalidValue());

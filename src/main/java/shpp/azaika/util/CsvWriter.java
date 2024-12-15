@@ -19,7 +19,7 @@ public class CsvWriter implements AutoCloseable {
         this.outputStream = new FileOutputStream(fileName, true);
         this.csvMapper = (CsvMapper) new CsvMapper().registerModule(new JavaTimeModule());
         this.csvMapper.configure(JsonGenerator.Feature.AUTO_CLOSE_TARGET, false);
-        logger.debug("CsvWriter initialized for file: {}", fileName);
+        logger.info("CsvWriter initialized for file: {}", fileName);
     }
 
     public void write(UserPojo userPojo) throws IOException {
@@ -30,6 +30,6 @@ public class CsvWriter implements AutoCloseable {
     @Override
     public void close() throws IOException {
         outputStream.close();
-        logger.debug("CsvWriter closed");
+        logger.info("CsvWriter closed");
     }
 }

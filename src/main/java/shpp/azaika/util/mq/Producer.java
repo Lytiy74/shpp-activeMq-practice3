@@ -52,7 +52,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     }
 
     public void sendTextMessage(String text) throws JMSException {
-        logger.info("Sending message: {}", text);
+        logger.debug("Sending message: {}", text);
         TextMessage textMessage = session.createTextMessage(text);
         messageProducer.send(textMessage);
         messagesSent.incrementAndGet();
@@ -83,12 +83,13 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     @Override
     public Integer call() throws Exception {
         try {
+            logger.info("Producer thread started");
             sendMessages();
         } finally {
             sendPoisonPill();
             close();
         }
-        logger.info(Thread.currentThread().getName() + " has been finished.");
+        logger.info("{} has been finished.",Thread.currentThread().getName() );
         return messagesSent.get();
     }
 
