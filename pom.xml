@@ -191,7 +191,8 @@
                     <filter>
                       <artifact>*:*</artifact>
                       <excludes>
-                        <exclude>config.properties</exclude>
+                        <exclude>app.properties</exclude>
+                        <exclude>logback.xml</exclude>
                       </excludes>
                     </filter>
                   </filters>
@@ -210,13 +211,10 @@
                   <goal>copy-resources</goal>
                 </goals>
                 <configuration>
-                  <outputDirectory>${project.build.directory}</outputDirectory> <!-- Місце розташування файлу -->
+                  <outputDirectory>${project.build.directory}</outputDirectory>
                   <resources>
                     <resource>
                       <directory>src/main/resources</directory>
-                      <includes>
-                        <include>config.properties</include> <!-- Включаємо тільки config.properties -->
-                      </includes>
                     </resource>
                   </resources>
                 </configuration>
