@@ -33,7 +33,7 @@ public class MessageHandler {
         this.invalidQueue = invalidQueue;
     }
 
-    public void handleMessage(Message message) throws JMSException, IOException, InterruptedException {
+    public void handleMessage(Message message) throws JMSException, InterruptedException {
         if (message instanceof TextMessage textMessage) {
             handleTextMessage(textMessage);
         } else {
@@ -41,7 +41,7 @@ public class MessageHandler {
         }
     }
 
-    private void handleTextMessage(TextMessage message) throws JMSException, IOException, InterruptedException {
+    private void handleTextMessage(TextMessage message) throws JMSException, InterruptedException {
         String textFromMessage = message.getText();
         try {
             UserPojo userPojo = mapper.readValue(textFromMessage, UserPojo.class);
