@@ -136,7 +136,6 @@ public class App {
         producersExecutor = Executors.newFixedThreadPool(threadCount);
         List<Future<Integer>> futures = new ArrayList<>();
         for (int i = 0; i < threadCount; i++) {
-            logger.info("Starting producer thread {}", i);
             Producer task = new Producer(connectionFactory, messageQueue);
             task.connect(destinationName);
             futures.add(producersExecutor.submit(task));
@@ -161,7 +160,7 @@ public class App {
 
     private static void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
         writerExecutor = Executors.newFixedThreadPool(2);
-        int timeoutSeconds = 1;
+        int timeoutSeconds = 3;
 
         writerExecutor.submit(() -> {
             try (CsvWriter validWriter = new CsvWriter("valid_users.csv")) {
@@ -186,7 +185,7 @@ public class App {
                 while (true) {
                     UserPojo userPojo = invalidQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
                     if (userPojo == null) {
-                        logger.info("Invalid queue writer stopped after no data for {} seconds.", timeoutSeconds);
+                        logger.warn("Invalid queue writer stopped after no data for {} seconds.", timeoutSeconds);
                         break;
                     }
                     invalidWriter.write(userPojo);
@@ -195,7 +194,7 @@ public class App {
                 logger.error("Error writing to invalid_users.csv", e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                logger.info("Invalid queue writer was interrupted.");
+                logger.warn("Invalid queue writer was interrupted.");
             }
         });
     }
@@ -211,7 +210,9 @@ public class App {
                 try {
                     UserPojo user = userPojoGenerator.generate();
                     messageQueue.put(objectMapper.writeValueAsString(user));
-                    logger.debug("Generated message and added to queue: {}", user);
+                    if (count % 1000 == 0) {
+                    logger.debug("Generated messages {}", count);
+                    }
                     count++;
                 } catch (JsonProcessingException | InterruptedException e) {
                     Thread.currentThread().interrupt();

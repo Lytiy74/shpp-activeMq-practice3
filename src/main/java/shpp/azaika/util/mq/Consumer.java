@@ -29,7 +29,6 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
         }
         this.messageHandler = messageHandler;
         this.connectionFactory = connectionFactory;
-        logger.debug("Consumer initialized");
     }
 
     public void connect(String destinationName) throws JMSException {
@@ -41,7 +40,7 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
             connection.start();
             session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             messageConsumer = createMessageConsumer(session, destinationName);
-            logger.info("Connected to queue: {}", destinationName);
+            logger.debug("Connected to queue: {}", destinationName);
         } catch (JMSException e) {
             close();
             throw e;
@@ -85,7 +84,9 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
                     break;
                 }
                 processedMessages++;
-                logger.debug("Processed messages count: {}", processedMessages);
+                if (processedMessages % 1000 == 0) {
+                    logger.debug("Processed messages count: {}", processedMessages);
+                }
             }
         } catch (Exception e) {
             logger.error("Unexpected error in consumer thread", e);
