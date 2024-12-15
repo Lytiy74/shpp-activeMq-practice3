@@ -51,7 +51,7 @@ public class App {
 
         int messageCount = Integer.parseInt(args[0]);
         int queueCapacity = 10_000;
-        int threadCount = 4;
+        int threadCount = Integer.parseInt(propertyManager.getProperty("threads"));
 
         BlockingQueue<String> messageQueue = new ArrayBlockingQueue<>(queueCapacity);
 
