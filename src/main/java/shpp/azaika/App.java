@@ -34,7 +34,7 @@ public class App {
         StopWatch allProgramWatch = new StopWatch(true);
         if (args.length < 1) {
             logger.error("Please provide the number of messages to send as the first argument.");
-            System.exit(1);
+            throw new IllegalArgumentException();
         }
 
         PropertyManager propertyManager = new PropertyManager("app.properties");
@@ -60,8 +60,8 @@ public class App {
         logger.info("Start producers main");
         List<Future<Integer>> producersFutureList = startProducers(threadCount, connectionFactory, messageQueue, destinationName);
 
-        BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 10);
-        BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 10);
+        BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 1000);
+        BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 1000);
 
         StopWatch consumersStopWatch = new StopWatch(true);
         logger.info("Start consumers main");
@@ -70,21 +70,27 @@ public class App {
         logger.info("Start writers main");
         startWriters(validQueue, invalidQueue);
 
+
         shutdownExecutor(messageGeneratorExecutor, "Message Generator", durationMillis, TimeUnit.MILLISECONDS);
         shutdownExecutor(producersExecutor, "Producers", durationMillis, TimeUnit.MILLISECONDS);
         shutdownExecutor(consumerExecutor, "Consumers", durationMillis, TimeUnit.MILLISECONDS);
-        shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.MINUTES);
+        if (!validQueue.isEmpty() && !invalidQueue.isEmpty()) {
+            shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.MINUTES);
+        }else{
+            shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.SECONDS);
+        }
 
         int generatedMessages = calculateSum(generateMessagesFutureList);
         int producedMessage = calculateSum(producersFutureList);
         int consumedMessage = calculateSum(consumersFutureList);
 
         logger.info("----------------------------PERFORMANCE----------------------------");
-        logPerformance("Message Generation",generateMessagesStopWatch.stop(), generatedMessages);
+        logPerformance("Message Generation", generateMessagesStopWatch.stop(), generatedMessages);
         logPerformance("Message Sending (Producers)", producersStopWatch.stop(), producedMessage);
         logPerformance("Message Processing and Writing (Consumers/Writers)", consumersStopWatch.stop(), consumedMessage);
         logPerformance("Total Execution Time", allProgramWatch.stop(), messageCount);
     }
+
     public static int calculateSum(List<Future<Integer>> futureList) {
         return futureList.stream()
                 .mapToInt(future -> {
@@ -133,7 +139,7 @@ public class App {
         return futures;
     }
 
-    private static List<Future<Integer>> startProducers(int threadCount, ActiveMQConnectionFactory connectionFactory, BlockingQueue<String> messageQueue, String destinationName) throws JMSException{
+    private static List<Future<Integer>> startProducers(int threadCount, ActiveMQConnectionFactory connectionFactory, BlockingQueue<String> messageQueue, String destinationName) throws JMSException {
         producersExecutor = Executors.newFixedThreadPool(threadCount);
         List<Future<Integer>> futures = new ArrayList<>();
         for (int i = 0; i < threadCount; i++) {
@@ -161,14 +167,13 @@ public class App {
 
     private static void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
         writerExecutor = Executors.newFixedThreadPool(2);
-        int timeoutSeconds = 10;
 
         writerExecutor.submit(() -> {
             try (CsvWriter validWriter = new CsvWriter("valid_users.csv")) {
                 while (true) {
-                    UserPojo userPojo = validQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
+                    UserPojo userPojo = validQueue.take();
                     if (userPojo == null) {
-                        logger.info("Valid queue writer stopped after no data for {} seconds.", timeoutSeconds);
+                        logger.info("Valid queue writer stopped after no data for {} seconds.");
                         break;
                     }
                     validWriter.write(userPojo);
@@ -184,9 +189,9 @@ public class App {
         writerExecutor.submit(() -> {
             try (CsvWriter invalidWriter = new CsvWriter("invalid_users.csv")) {
                 while (true) {
-                    UserPojo userPojo = invalidQueue.poll(timeoutSeconds, TimeUnit.SECONDS);
+                    UserPojo userPojo = invalidQueue.take();
                     if (userPojo == null) {
-                        logger.warn("Invalid queue writer stopped after no data for {} seconds.", timeoutSeconds);
+                        logger.warn("Invalid queue writer stopped after no data for {} seconds.");
                         break;
                     }
                     invalidWriter.write(userPojo);
@@ -212,7 +217,7 @@ public class App {
                     UserPojo user = userPojoGenerator.generate();
                     messageQueue.put(objectMapper.writeValueAsString(user));
                     if (count % 1000 == 0) {
-                    logger.debug("Generated messages {}", count);
+                        logger.debug("Generated messages {}", count);
                     }
                     count++;
                 } catch (JsonProcessingException | InterruptedException e) {
