@@ -4,19 +4,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import shpp.azaika.util.UserPojoGenerator;
 
 import javax.jms.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 import static org.mockito.Mockito.*;
 
 class ProducerTest {
     @Mock
     ConnectionFactory connectionFactoryMock;
-
-    @Mock
-    BlockingQueue<String> messageSourceQueueMock;
 
     @Mock
     Connection connectionMock;
@@ -33,6 +29,9 @@ class ProducerTest {
     @Mock
     TextMessage textMessageMock;
 
+    @Mock
+    UserPojoGenerator userPojoGeneratorMock;
+
 
     @BeforeEach
     void setUp() throws JMSException {
@@ -42,12 +41,13 @@ class ProducerTest {
         when(sessionMock.createQueue("TestQueue")).thenReturn(destinationMock);
         when(sessionMock.createProducer(destinationMock)).thenReturn(producerMock);
         when(sessionMock.createTextMessage(anyString())).thenReturn(textMessageMock);
+        when(userPojoGeneratorMock.generateUserPojoAsJson()).thenReturn("");
 
     }
 
     @Test
     void connect() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
 
         producer.connect("TestQueue");
         verify(connectionMock).start();
@@ -57,7 +57,7 @@ class ProducerTest {
 
     @Test
     void sendTextMessage() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
         producer.connect("TestQueue");
         TextMessage textMessageMock = mock(TextMessage.class);
         when(sessionMock.createTextMessage("Test message")).thenReturn(textMessageMock);
@@ -70,7 +70,7 @@ class ProducerTest {
 
     @Test
     void sendPoisonPill() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
         producer.connect("TestQueue");
 
         TextMessage poisonPillMessageMock = mock(TextMessage.class);
@@ -84,7 +84,7 @@ class ProducerTest {
 
     @Test
     void close() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
         producer.connect("TestQueue");
 
         producer.close();
@@ -97,13 +97,11 @@ class ProducerTest {
 
     @Test
     void call() throws Exception {
-        when(messageSourceQueueMock.poll(1, TimeUnit.SECONDS)).thenReturn("Message 1", "Message 2", null);
-
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
         producer.connect("TestQueue");
 
         producer.call();
 
-        verify(producerMock, times(3)).send(any(TextMessage.class));
+        verify(producerMock, times(2)).send(any(TextMessage.class));
     }
 }

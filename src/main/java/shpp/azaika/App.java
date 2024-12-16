@@ -1,6 +1,5 @@
 package shpp.azaika;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.validation.Validation;
@@ -25,7 +24,6 @@ import java.util.concurrent.*;
 
 public class App {
     private static final Logger logger = LoggerFactory.getLogger(App.class);
-    private static ExecutorService messageGeneratorExecutor;
     private static ExecutorService producersExecutor;
     private static ExecutorService consumerExecutor;
     private static ExecutorService writerExecutor;
@@ -47,47 +45,23 @@ public class App {
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(userName, userPassword, urlMq);
 
         int messageCount = Integer.parseInt(args[0]);
-        int queueCapacity = 10_000;
-        int threadCount = Integer.parseInt(propertyManager.getProperty("threads"));
+        int threadsProducer = Integer.parseInt(propertyManager.getProperty("threads_producer"));
+        int threadsConsumer = Integer.parseInt(propertyManager.getProperty("threads_consumer"));
 
-        BlockingQueue<String> messageQueue = new ArrayBlockingQueue<>(queueCapacity);
+        List<Future<Integer>> producersFutureList = startProducers(threadsProducer,threadsConsumer, connectionFactory, destinationName, messageCount);
 
-        StopWatch generateMessagesStopWatch = new StopWatch(true);
-        logger.info("Start generated Messaged main");
-        List<Future<Integer>> generateMessagesFutureList = generateMessages(messageCount, threadCount, messageQueue);
+        List<Future<Integer>> consumersFutureList = startConsumers(threadsConsumer, connectionFactory, destinationName);
 
-        StopWatch producersStopWatch = new StopWatch(true);
-        logger.info("Start producers main");
-        List<Future<Integer>> producersFutureList = startProducers(threadCount, connectionFactory, messageQueue, destinationName);
-
-        BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 1000);
-        BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 1000);
-
-        StopWatch consumersStopWatch = new StopWatch(true);
-        logger.info("Start consumers main");
-        List<Future<Integer>> consumersFutureList = startConsumers(threadCount, connectionFactory, destinationName, validQueue, invalidQueue);
-
-        logger.info("Start writers main");
-        startWriters(validQueue, invalidQueue);
-
-
-        shutdownExecutor(messageGeneratorExecutor, "Message Generator", durationMillis, TimeUnit.MILLISECONDS);
         shutdownExecutor(producersExecutor, "Producers", durationMillis, TimeUnit.MILLISECONDS);
-        shutdownExecutor(consumerExecutor, "Consumers", durationMillis, TimeUnit.MILLISECONDS);
-        if (!validQueue.isEmpty() && !invalidQueue.isEmpty()) {
-            shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.MINUTES);
-        }else{
-            shutdownExecutor(writerExecutor, "Writers", 1, TimeUnit.SECONDS);
-        }
+        consumerExecutor.shutdown();
+        writerExecutor.shutdown();
 
-        int generatedMessages = calculateSum(generateMessagesFutureList);
         int producedMessage = calculateSum(producersFutureList);
         int consumedMessage = calculateSum(consumersFutureList);
 
         logger.info("----------------------------PERFORMANCE----------------------------");
-        logPerformance("Message Generation", generateMessagesStopWatch.stop(), generatedMessages);
-        logPerformance("Message Sending (Producers)", producersStopWatch.stop(), producedMessage);
-        logPerformance("Message Processing and Writing (Consumers/Writers)", consumersStopWatch.stop(), consumedMessage);
+        logPerformance("Produced messages per second", allProgramWatch.taken(),producedMessage);
+        logPerformance("Consumed messages per second", allProgramWatch.taken(),consumedMessage);
         logPerformance("Total Execution Time", allProgramWatch.stop(), messageCount);
     }
 
@@ -126,33 +100,23 @@ public class App {
         logger.info("{} completed in {} seconds ({} messages/second) ({} total messages)", taskName, durationSeconds, messagesPerSecond, messageCount);
     }
 
-    private static List<Future<Integer>> generateMessages(int messageCount, int threadCount, BlockingQueue<String> messageQueue) {
-        int messagesPerThread = messageCount / threadCount;
-        int remainingMessages = messageCount % threadCount;
-        List<Future<Integer>> futures = new ArrayList<>();
 
-        messageGeneratorExecutor = Executors.newFixedThreadPool(threadCount);
-        for (int i = 0; i < threadCount; i++) {
-            int messagesForThisThread = messagesPerThread + (i == threadCount - 1 ? remainingMessages : 0);
-            futures.add(messageGeneratorExecutor.submit(createMessageGeneratorTask(messagesForThisThread, messageQueue)));
-        }
-        return futures;
-    }
-
-    private static List<Future<Integer>> startProducers(int threadCount, ActiveMQConnectionFactory connectionFactory, BlockingQueue<String> messageQueue, String destinationName) throws JMSException {
+    private static List<Future<Integer>> startProducers(int threadCount, int consumers, ActiveMQConnectionFactory connectionFactory, String destinationName, int messagesToSend) throws JMSException {
         producersExecutor = Executors.newFixedThreadPool(threadCount);
         List<Future<Integer>> futures = new ArrayList<>();
         for (int i = 0; i < threadCount; i++) {
-            Producer task = new Producer(connectionFactory, messageQueue);
+            Producer task = new Producer(connectionFactory, new UserPojoGenerator(), messagesToSend,consumers);
             task.connect(destinationName);
             futures.add(producersExecutor.submit(task));
         }
         return futures;
     }
 
-    private static List<Future<Integer>> startConsumers(int threadCount, ActiveMQConnectionFactory connectionFactory, String destinationName, BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) throws JMSException {
+    private static List<Future<Integer>> startConsumers(int threadCount, ActiveMQConnectionFactory connectionFactory, String destinationName) throws JMSException {
         consumerExecutor = Executors.newFixedThreadPool(threadCount);
         List<Future<Integer>> futures = new ArrayList<>();
+        BlockingQueue<UserPojo> validQueue = new ArrayBlockingQueue<>(threadCount * 3000);
+        BlockingQueue<UserPojo> invalidQueue = new ArrayBlockingQueue<>(threadCount * 3000);
 
         for (int i = 0; i < threadCount; i++) {
             ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -162,6 +126,7 @@ public class App {
             task.connect(destinationName);
             futures.add(consumerExecutor.submit(task));
         }
+        startWriters(validQueue,invalidQueue);
         return futures;
     }
 
@@ -171,65 +136,27 @@ public class App {
         writerExecutor.submit(() -> {
             try (CsvWriter validWriter = new CsvWriter("valid_users.csv")) {
                 while (true) {
-                    UserPojo userPojo = validQueue.take();
-                    if (userPojo == null) {
-                        logger.info("Valid queue writer stopped after no data for {} seconds.");
-                        break;
-                    }
-                    validWriter.write(userPojo);
+                    UserPojo userPojo = validQueue.poll();
+                    if (userPojo == null && consumerExecutor.isTerminated()) break;
+                    if (userPojo != null) validWriter.write(userPojo);
                 }
             } catch (IOException e) {
                 logger.error("Error writing to valid_users.csv", e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                logger.info("Valid queue writer was interrupted.");
             }
         });
 
         writerExecutor.submit(() -> {
             try (CsvWriter invalidWriter = new CsvWriter("invalid_users.csv")) {
                 while (true) {
-                    UserPojo userPojo = invalidQueue.take();
-                    if (userPojo == null) {
-                        logger.warn("Invalid queue writer stopped after no data for {} seconds.");
-                        break;
-                    }
-                    invalidWriter.write(userPojo);
+                    UserPojo userPojo = invalidQueue.poll();
+                    if (userPojo == null && consumerExecutor.isTerminated()) break;
+                    if (userPojo != null) invalidWriter.write(userPojo);
                 }
             } catch (IOException e) {
                 logger.error("Error writing to invalid_users.csv", e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                logger.warn("Invalid queue writer was interrupted.");
             }
         });
-    }
 
-    private static Callable<Integer> createMessageGeneratorTask(int messageCount, BlockingQueue<String> messageQueue) {
-        return () -> {
-            int count = 0;
-            logger.info("Starting message generation thread.");
-            UserPojoGenerator userPojoGenerator = new UserPojoGenerator();
-            ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-
-            for (int i = 0; i < messageCount; i++) {
-                try {
-                    UserPojo user = userPojoGenerator.generate();
-                    messageQueue.put(objectMapper.writeValueAsString(user));
-                    if (count % 1000 == 0) {
-                        logger.debug("Generated messages {}", count);
-                    }
-                    count++;
-                } catch (JsonProcessingException | InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    logger.error("Error during message generation", e);
-                    break;
-                }
-            }
-
-            logger.info("Finished message generation thread.");
-            return count;
-        };
     }
 
 }

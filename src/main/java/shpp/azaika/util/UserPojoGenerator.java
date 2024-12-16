@@ -1,5 +1,8 @@
 package shpp.azaika.util;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import net.datafaker.Faker;
 import net.datafaker.idnumbers.UkrainianIdNumber;
 import shpp.azaika.pojo.UserPojo;
@@ -10,12 +13,22 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class UserPojoGenerator {
     private final Faker faker = new Faker(new Locale("uk_UA"));
+    private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
     public UserPojo generate() {
         String name = generateName();
         String eddr = generateEddr();
         int count = generateCount();
         LocalDate date = LocalDate.now();
         return new UserPojo(name, eddr, count, date);
+    }
+
+    public String generateUserPojoAsJson() {
+        UserPojo generate = generate();
+        try {
+            return mapper.writeValueAsString(generate);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
     }
 
     private int generateCount() {
