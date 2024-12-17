@@ -91,34 +91,20 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
         } catch (Exception e) {
             logger.error("Unexpected error in consumer thread", e);
         } finally {
-            try {
                 close();
-            } catch (JMSException e) {
-                logger.error("Error closing resources", e);
-            }
             logger.info("Consumer thread finished. Total processed messages: {}", processedMessages);
         }
         return processedMessages;
     }
 
     @Override
-    public void close() throws JMSException {
-        if (messageConsumer != null) {
-            messageConsumer.close();
-            logger.debug("MessageConsumer closed");
+    public void close() {
+        try {
+            if (messageConsumer != null) messageConsumer.close();
+            if (session != null) session.close();
+            if (connection != null) connection.close();
+        } catch (JMSException e) {
+            logger.error("Error while closing JMS resources", e);
         }
-        if (session != null) {
-            session.close();
-            logger.debug("Session closed");
-        }
-        if (connection != null) {
-            connection.close();
-            logger.debug("Connection closed");
-        }
-    }
-
-    public void stop() {
-        running = false;
-        logger.info("Consumer has been requested to stop");
     }
 }
