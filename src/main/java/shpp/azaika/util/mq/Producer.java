@@ -13,22 +13,19 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
-    private MessageProducer messageProducer;
-    private Session session;
+    private final AtomicInteger messagesSent = new AtomicInteger(0);
+    private final AtomicInteger messagesToSend;
+
+    private final ConnectionFactory connectionFactory;
     private Connection connection;
+    private Session session;
+    private MessageProducer messageProducer;
 
     public static final String POISON_PILL = "POISON PILL 'DUDE STOP!'";
 
-    private final ConnectionFactory connectionFactory;
-
-    private final AtomicInteger messagesSent = new AtomicInteger(0);
-
     private final UserPojoGenerator pojoGenerator;
 
-    private final int messagesToSend;
-    private final int consumers;
-
-    public Producer(ConnectionFactory connectionFactory, UserPojoGenerator userPojoGenerator, int messagesToSend, int consumers) {
+    public Producer(ConnectionFactory connectionFactory, UserPojoGenerator userPojoGenerator, int messagesToSend) {
         if (connectionFactory == null) {
             throw new IllegalArgumentException("ConnectionFactory must not be null");
         }
@@ -37,8 +34,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         }
         this.connectionFactory = connectionFactory;
         this.pojoGenerator = userPojoGenerator;
-        this.messagesToSend = messagesToSend;
-        this.consumers = consumers;
+        this.messagesToSend = new AtomicInteger(messagesToSend);
     }
 
     public void connect(String destinationName) throws JMSException {
@@ -54,22 +50,47 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         }
     }
 
-    public void sendTextMessage(String text) throws JMSException {
-        logger.debug("Sending message: {}", text);
-        TextMessage textMessage = session.createTextMessage(text);
-        messageProducer.send(textMessage);
-        messagesSent.incrementAndGet();
-    }
-
-    public void sendPoisonPill() throws JMSException {
-        logger.info("Sending POISON PILL");
-        sendTextMessage(POISON_PILL);
-    }
-
     private MessageProducer createMessageProducer(Session session, Destination destination) throws JMSException {
         MessageProducer producer = session.createProducer(destination);
         producer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
         return producer;
+    }
+
+    public void sendTextMessage(String text) {
+        try {
+            logger.debug("Sending message #{}: {}", messagesSent.getAndIncrement(), text);
+            TextMessage textMessage = session.createTextMessage(text);
+            messageProducer.send(textMessage);
+        } catch (JMSException e) {
+            throw new JMSRuntimeException(e.getMessage());
+        }
+
+    }
+
+    public void sendPoisonPill() {
+        logger.info("Sending POISON PILL");
+        sendTextMessage(POISON_PILL);
+    }
+
+    public void sendPoisonPill(int consumersQty) {
+        for (int i = 0; i < consumersQty; i++) {
+            sendPoisonPill();
+        }
+    }
+
+    private void sendMessages() {
+        Stream.generate(pojoGenerator::generateUserPojoAsJson)
+                .takeWhile(o -> 0 < messagesToSend.getAndDecrement())
+                .takeWhile(msg -> !Thread.currentThread().isInterrupted())
+                .forEach(this::sendTextMessage);
+    }
+
+    @Override
+    public Integer call() throws Exception {
+        logger.info("Producer thread started");
+        sendMessages();
+        logger.info("{} has been finished.", Thread.currentThread().getName());
+        return messagesSent.get();
     }
 
     @Override
@@ -82,36 +103,5 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
             logger.error("Error while closing JMS resources", e);
         }
     }
-
-    @Override
-    public Integer call() throws Exception {
-        try {
-            logger.info("Producer thread started");
-            sendMessages();
-        } finally {
-            for (int i = 0; i < consumers; i++) {
-                sendPoisonPill();
-            }
-            close();
-        }
-        logger.info("{} has been finished.", Thread.currentThread().getName());
-        return messagesSent.get();
-    }
-
-    private void sendMessages() {
-        Stream.generate(pojoGenerator::generateUserPojoAsJson)
-                .takeWhile(o -> messagesSent.get() < messagesToSend)
-                .takeWhile(msg -> !Thread.currentThread().isInterrupted())
-                .forEach(this::processMessage);
-    }
-
-    private void processMessage(String polledText) {
-        try {
-            sendTextMessage(polledText);
-        } catch (JMSException e) {
-            logger.error("Error sending message", e);
-        }
-    }
-
 
 }
