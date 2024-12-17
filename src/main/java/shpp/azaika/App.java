@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.stream.IntStream;
 
 public class App {
     private static final Logger logger = LoggerFactory.getLogger(App.class);
@@ -57,7 +56,7 @@ public class App {
         List<Future<Integer>> consumersFutureList = startConsumers(threadsConsumer, connectionFactory, destinationName);
 
         shutdownExecutor(producersExecutor, "Producers", durationMillis, TimeUnit.MILLISECONDS);
-        IntStream.range(0,consumers.size()).forEach(producers.getFirst()::sendPoisonPill);
+        producers.getFirst().sendPoisonPill(consumers.size());
         producers.forEach(Producer::close);
 
         shutdownExecutor(consumerExecutor, "Consumers", 1, TimeUnit.MINUTES);
@@ -141,30 +140,21 @@ public class App {
     private static void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
         writerExecutor = Executors.newFixedThreadPool(2);
 
-        writerExecutor.submit(() -> {
-            try (CsvWriter validWriter = new CsvWriter("valid_users.csv")) {
-                while (true) {
-                    UserPojo userPojo = validQueue.poll();
-                    if (userPojo == null && consumerExecutor.isTerminated()) break;
-                    if (userPojo != null) validWriter.write(userPojo);
-                }
-            } catch (IOException e) {
-                logger.error("Error writing to valid_users.csv", e);
-            }
-        });
-
-        writerExecutor.submit(() -> {
-            try (CsvWriter invalidWriter = new CsvWriter("invalid_users.csv")) {
-                while (true) {
-                    UserPojo userPojo = invalidQueue.poll();
-                    if (userPojo == null && consumerExecutor.isTerminated()) break;
-                    if (userPojo != null) invalidWriter.write(userPojo);
-                }
-            } catch (IOException e) {
-                logger.error("Error writing to invalid_users.csv", e);
-            }
-        });
-
+        writerExecutor.submit(() -> writeUsersToCsv(validQueue, "valid_users.csv"));
+        writerExecutor.submit(() -> writeUsersToCsv(invalidQueue, "invalid_users.csv"));
     }
+
+    private static void writeUsersToCsv(BlockingQueue<UserPojo> queue, String fileName) {
+        try (CsvWriter writer = new CsvWriter(fileName)) {
+            while (true) {
+                UserPojo userPojo = queue.poll();
+                if (userPojo == null && consumerExecutor.isTerminated()) break;
+                if (userPojo != null) writer.write(userPojo);
+            }
+        } catch (IOException e) {
+            logger.error("Error writing to file: {}", fileName, e);
+        }
+    }
+
 
 }
