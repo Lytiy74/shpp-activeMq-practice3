@@ -7,11 +7,14 @@ import shpp.azaika.util.MessageHandler;
 
 import javax.jms.*;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Consumer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Consumer.class);
     private final ActiveMQConnectionFactory connectionFactory;
+
+    private final AtomicInteger messagesConsumed = new AtomicInteger(0);
 
     private Connection connection;
     private Session session;
@@ -76,25 +79,24 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
 
     @Override
     public Integer call() {
-        int processedMessages = 0;
         try {
             logger.info("Consumer thread started");
             while (running) {
                 if (!processNextMessage()) {
                     break;
                 }
-                processedMessages++;
-                if (processedMessages % 1000 == 0) {
-                    logger.debug("Processed messages count: {}", processedMessages);
+                messagesConsumed.incrementAndGet();
+                if (messagesConsumed.get() % 1000 == 0) {
+                    logger.debug("Processed messages count: {}", messagesConsumed.get());
                 }
             }
         } catch (Exception e) {
             logger.error("Unexpected error in consumer thread", e);
         } finally {
                 close();
-            logger.info("Consumer thread finished. Total processed messages: {}", processedMessages);
+            logger.info("Consumer thread finished. Total processed messages: {}", messagesConsumed.get());
         }
-        return processedMessages;
+        return messagesConsumed.get();
     }
 
     @Override
@@ -107,4 +109,9 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
             logger.error("Error while closing JMS resources", e);
         }
     }
+
+    public int getConsumedMessagesCount() {
+        return messagesConsumed.get();
+    }
+
 }
