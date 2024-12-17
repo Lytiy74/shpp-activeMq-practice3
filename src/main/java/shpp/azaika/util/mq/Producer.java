@@ -13,7 +13,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
-    private final AtomicInteger messagesSent = new AtomicInteger(0);
+    private static final AtomicInteger messagesSent = new AtomicInteger(0);
     private final AtomicInteger messagesToSend;
 
     private final ConnectionFactory connectionFactory;
@@ -86,7 +86,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     }
 
     @Override
-    public Integer call() throws Exception {
+    public Integer call() {
         logger.info("Producer thread started");
         sendMessages();
         logger.info("{} has been finished.", Thread.currentThread().getName());
