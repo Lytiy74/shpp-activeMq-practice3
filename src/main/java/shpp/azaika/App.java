@@ -21,12 +21,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.stream.IntStream;
 
 public class App {
     private static final Logger logger = LoggerFactory.getLogger(App.class);
     private static ExecutorService producersExecutor;
     private static ExecutorService consumerExecutor;
     private static ExecutorService writerExecutor;
+    private static final List<Producer> producers = new ArrayList<>();
+    private static final List<Consumer> consumers = new ArrayList<>();
+
 
     public static void main(String[] args) throws IOException, JMSException {
         StopWatch allProgramWatch = new StopWatch(true);
@@ -43,26 +47,30 @@ public class App {
         long durationMillis = Long.parseLong(propertyManager.getProperty("generation.duration"));
 
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(userName, userPassword, urlMq);
+        connectionFactory.setTrustedPackages(List.of("shpp.azaika"));
 
         int messageCount = Integer.parseInt(args[0]);
         int threadsProducer = Integer.parseInt(propertyManager.getProperty("threads_producer"));
         int threadsConsumer = Integer.parseInt(propertyManager.getProperty("threads_consumer"));
 
-        List<Future<Integer>> producersFutureList = startProducers(threadsProducer,threadsConsumer, connectionFactory, destinationName, messageCount);
-
+        List<Future<Integer>> producersFutureList = startProducers(threadsProducer, connectionFactory, destinationName, messageCount);
         List<Future<Integer>> consumersFutureList = startConsumers(threadsConsumer, connectionFactory, destinationName);
 
         shutdownExecutor(producersExecutor, "Producers", durationMillis, TimeUnit.MILLISECONDS);
-        consumerExecutor.shutdown();
+        IntStream.range(0,consumers.size()).forEach(producers.getFirst()::sendPoisonPill);
+        producers.forEach(Producer::close);
+
+        shutdownExecutor(consumerExecutor, "Consumers", 1, TimeUnit.MINUTES);
+        consumers.forEach(Consumer::close);
         writerExecutor.shutdown();
 
         int producedMessage = calculateSum(producersFutureList);
         int consumedMessage = calculateSum(consumersFutureList);
 
         logger.info("----------------------------PERFORMANCE----------------------------");
-        logPerformance("Produced messages per second", allProgramWatch.taken(),producedMessage);
-        logPerformance("Consumed messages per second", allProgramWatch.taken(),consumedMessage);
-        logPerformance("Total Execution Time", allProgramWatch.stop(), messageCount);
+        logger.info("Produced messages {}", producedMessage);
+        logger.info("Consumed messages {}", consumedMessage);
+        logger.info("All task completed in {} seconds ({} messages/second) ({} total messages)", allProgramWatch.stop(), (producedMessage+consumedMessage)/allProgramWatch.taken(), messageCount);
     }
 
     public static int calculateSum(List<Future<Integer>> futureList) {
@@ -70,8 +78,8 @@ public class App {
                 .mapToInt(future -> {
                     try {
                         return future.get();
-                    } catch (Exception e) {
-                        logger.error("Error retrieving result from Future: " + e.getMessage());
+                    } catch (ExecutionException | InterruptedException e) {
+                        logger.error("Error retrieving result from Future: {}", e.getMessage());
                         return 0;
                     }
                 })
@@ -94,20 +102,19 @@ public class App {
         }
     }
 
-    private static void logPerformance(String taskName, long durationMillis, int messageCount) {
-        double durationSeconds = TimeUnit.MILLISECONDS.toSeconds(durationMillis);
-        double messagesPerSecond = messageCount / (durationSeconds > 0 ? durationSeconds : 1);
-        logger.info("{} completed in {} seconds ({} messages/second) ({} total messages)", taskName, durationSeconds, messagesPerSecond, messageCount);
-    }
+    private static List<Future<Integer>> startProducers(int producersQty, ActiveMQConnectionFactory connectionFactory, String destinationName, int messagesToSend) throws JMSException {
+        producersExecutor = Executors.newFixedThreadPool(producersQty);
+        int messagesPerThread = messagesToSend / producersQty;
+        int pendingMessages = messagesToSend % producersQty;
 
-
-    private static List<Future<Integer>> startProducers(int threadCount, int consumers, ActiveMQConnectionFactory connectionFactory, String destinationName, int messagesToSend) throws JMSException {
-        producersExecutor = Executors.newFixedThreadPool(threadCount);
         List<Future<Integer>> futures = new ArrayList<>();
-        for (int i = 0; i < threadCount; i++) {
-            Producer task = new Producer(connectionFactory, new UserPojoGenerator(), messagesToSend,consumers);
-            task.connect(destinationName);
-            futures.add(producersExecutor.submit(task));
+        for (int i = 0; i < producersQty; i++) {
+            int messagesForThisThread = (i == producersQty - 1) ? messagesPerThread + pendingMessages : messagesPerThread;
+
+            Producer producer = new Producer(connectionFactory, new UserPojoGenerator(), messagesForThisThread);
+            producers.add(producer);
+            producer.connect(destinationName);
+            futures.add(producersExecutor.submit(producer));
         }
         return futures;
     }
@@ -122,11 +129,12 @@ public class App {
             ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
             Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
-            Consumer task = new Consumer(connectionFactory, new MessageHandler(objectMapper, validator, validQueue, invalidQueue));
-            task.connect(destinationName);
-            futures.add(consumerExecutor.submit(task));
+            Consumer consumer = new Consumer(connectionFactory, new MessageHandler(objectMapper, validator, validQueue, invalidQueue));
+            consumers.add(consumer);
+            consumer.connect(destinationName);
+            futures.add(consumerExecutor.submit(consumer));
         }
-        startWriters(validQueue,invalidQueue);
+        startWriters(validQueue, invalidQueue);
         return futures;
     }
 
