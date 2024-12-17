@@ -13,7 +13,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
-    private static final AtomicInteger messagesSent = new AtomicInteger(0);
+    private final AtomicInteger messagesSent = new AtomicInteger(0);
     private final AtomicInteger messagesToSend;
 
     private final ConnectionFactory connectionFactory;
@@ -58,9 +58,9 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     public void sendTextMessage(String text) {
         try {
-            logger.debug("Sending message #{}: {}", messagesSent.getAndIncrement(), text);
             TextMessage textMessage = session.createTextMessage(text);
             messageProducer.send(textMessage);
+            messagesSent.getAndIncrement();
         } catch (JMSException e) {
             throw new JMSRuntimeException(e.getMessage());
         }
@@ -103,5 +103,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
             logger.error("Error while closing JMS resources", e);
         }
     }
-
+    public int getProducedMessageCount() {
+        return messagesSent.get();
+    }
 }
