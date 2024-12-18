@@ -1,4 +1,4 @@
-package shpp.azaika;
+package shpp.azaika.util.managers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;

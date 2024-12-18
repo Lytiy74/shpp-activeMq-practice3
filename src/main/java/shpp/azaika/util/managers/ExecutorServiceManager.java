@@ -1,4 +1,4 @@
-package shpp.azaika;
+package shpp.azaika.util.managers;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

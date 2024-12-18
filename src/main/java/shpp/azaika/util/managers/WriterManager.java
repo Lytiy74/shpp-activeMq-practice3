@@ -1,4 +1,4 @@
-package shpp.azaika;
+package shpp.azaika.util.managers;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,12 +14,11 @@ public class WriterManager {
     private static final Logger logger = LoggerFactory.getLogger(WriterManager.class);
     private final ExecutorService writerExecutor;
 
-    public WriterManager(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
+    public WriterManager() {
         writerExecutor = Executors.newFixedThreadPool(2);
-        startWriters(validQueue, invalidQueue);
     }
 
-    private void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
+    public void startWriters(BlockingQueue<UserPojo> validQueue, BlockingQueue<UserPojo> invalidQueue) {
         writerExecutor.submit(() -> writeUsersToCsv(validQueue, "valid_users.csv"));
         writerExecutor.submit(() -> writeUsersToCsv(invalidQueue, "invalid_users.csv"));
     }

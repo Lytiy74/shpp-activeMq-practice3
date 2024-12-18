@@ -1,4 +1,4 @@
-package shpp.azaika;
+package shpp.azaika.util.managers;
 
 import org.apache.activemq.ActiveMQConnectionFactory;
 import shpp.azaika.util.UserPojoGenerator;
@@ -15,7 +15,7 @@ public class ProducerManager {
     private final ExecutorService producerExecutor;
     private final int consumersQty;
 
-    public ProducerManager(int producerQty, int consumersQty) throws JMSException {
+    public ProducerManager(int producerQty, int consumersQty) {
         producerExecutor = Executors.newFixedThreadPool(producerQty);
         this.consumersQty = consumersQty;
     }
