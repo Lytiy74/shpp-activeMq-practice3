@@ -33,8 +33,6 @@ public class App {
         long durationMillis = Long.parseLong(propertyManager.getProperty("generation.duration"));
 
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(userName, userPassword, urlMq);
-        connectionFactory.setAlwaysSessionAsync(false);
-        connectionFactory.setOptimizeAcknowledge(true);
         connectionFactory.setTrustedPackages(List.of("shpp.azaika"));
 
         int messageCount = Integer.parseInt(args[0]);

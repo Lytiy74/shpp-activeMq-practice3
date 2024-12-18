@@ -13,10 +13,7 @@ import shpp.azaika.util.mq.Consumer;
 import javax.jms.JMSException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class ConsumerManager {
     private final List<Consumer> consumers = new ArrayList<>();
@@ -26,8 +23,8 @@ public class ConsumerManager {
 
     public ConsumerManager(int consumerQty) {
         consumerExecutor = Executors.newFixedThreadPool(consumerQty);
-        validQueue = new ArrayBlockingQueue<>(consumerQty * 3000);
-        invalidQueue = new ArrayBlockingQueue<>(consumerQty * 3000);
+        validQueue = new LinkedBlockingDeque<>(consumerQty * 3000);
+        invalidQueue = new LinkedBlockingDeque<>(consumerQty * 3000);
     }
 
     public void startConsumers(ActiveMQConnectionFactory connectionFactory, String destinationName, int consumerQty) throws JMSException {
