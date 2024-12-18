@@ -47,7 +47,7 @@ class ProducerTest {
 
     @Test
     void connect() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1);
 
         producer.connect("TestQueue");
         verify(connectionMock).start();
@@ -57,7 +57,7 @@ class ProducerTest {
 
     @Test
     void sendTextMessage() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1);
         producer.connect("TestQueue");
         TextMessage textMessageMock = mock(TextMessage.class);
         when(sessionMock.createTextMessage("Test message")).thenReturn(textMessageMock);
@@ -70,7 +70,7 @@ class ProducerTest {
 
     @Test
     void sendPoisonPill() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1);
         producer.connect("TestQueue");
 
         TextMessage poisonPillMessageMock = mock(TextMessage.class);
@@ -84,12 +84,11 @@ class ProducerTest {
 
     @Test
     void close() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1);
         producer.connect("TestQueue");
 
         producer.close();
 
-        // Перевіряємо, чи були закриті всі ресурси
         verify(producerMock).close();
         verify(sessionMock).close();
         verify(connectionMock).close();
@@ -97,11 +96,11 @@ class ProducerTest {
 
     @Test
     void call() throws Exception {
-        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1,1);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1);
         producer.connect("TestQueue");
 
         producer.call();
 
-        verify(producerMock, times(2)).send(any(TextMessage.class));
+        verify(producerMock, times(1)).send(any(TextMessage.class));
     }
 }

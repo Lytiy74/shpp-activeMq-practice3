@@ -1,6 +1,7 @@
 package shpp.azaika.util.managers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -31,7 +32,9 @@ public class ConsumerManager {
 
     public void startConsumers(ActiveMQConnectionFactory connectionFactory, String destinationName, int consumerQty) throws JMSException {
         for (int i = 0; i < consumerQty; i++) {
-            ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+             ObjectMapper objectMapper = new ObjectMapper()
+                    .registerModule(new JavaTimeModule())
+                    .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
             Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
             Consumer consumer = new Consumer(connectionFactory, new MessageHandler(objectMapper, validator, validQueue, invalidQueue));
             consumers.add(consumer);

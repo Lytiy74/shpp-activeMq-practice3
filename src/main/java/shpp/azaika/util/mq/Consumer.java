@@ -114,4 +114,39 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
         return messagesConsumed.get();
     }
 
+    public ActiveMQConnectionFactory getConnectionFactory() {
+        return connectionFactory;
+    }
+
+    public AtomicInteger getMessagesConsumed() {
+        return messagesConsumed;
+    }
+
+    public Connection getConnection() {
+        return connection;
+    }
+
+    public void setConnection(Connection connection) {
+        this.connection = connection;
+    }
+
+    public Session getSession() {
+        return session;
+    }
+
+    public void setSession(Session session) {
+        this.session = session;
+    }
+
+    public MessageConsumer getMessageConsumer() {
+        return messageConsumer;
+    }
+
+    public void setMessageConsumer(MessageConsumer messageConsumer) {
+        this.messageConsumer = messageConsumer;
+    }
+
+    public MessageHandler getMessageHandler() {
+        return messageHandler;
+    }
 }

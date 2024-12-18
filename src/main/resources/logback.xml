@@ -23,4 +23,8 @@
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="FILE"/>
     </logger>
+    <logger name="shpp.azaika.util.MessageHandler" level="OFF">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="FILE"/>
+    </logger>
 </configuration>

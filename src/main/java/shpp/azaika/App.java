@@ -5,6 +5,10 @@ import org.apache.activemq.util.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import shpp.azaika.util.PropertyManager;
+import shpp.azaika.util.managers.ConsumerManager;
+import shpp.azaika.util.managers.ExecutorServiceManager;
+import shpp.azaika.util.managers.ProducerManager;
+import shpp.azaika.util.managers.WriterManager;
 
 import javax.jms.JMSException;
 import java.io.IOException;
@@ -29,6 +33,8 @@ public class App {
         long durationMillis = Long.parseLong(propertyManager.getProperty("generation.duration"));
 
         ActiveMQConnectionFactory connectionFactory = new ActiveMQConnectionFactory(userName, userPassword, urlMq);
+        connectionFactory.setAlwaysSessionAsync(false);
+        connectionFactory.setOptimizeAcknowledge(true);
         connectionFactory.setTrustedPackages(List.of("shpp.azaika"));
 
         int messageCount = Integer.parseInt(args[0]);
@@ -41,22 +47,24 @@ public class App {
         ConsumerManager consumerManager = new ConsumerManager(threadsConsumer);
         consumerManager.startConsumers(connectionFactory,destinationName,threadsConsumer);
 
-        WriterManager writerManager = new WriterManager(consumerManager.getValidQueue(), consumerManager.getInvalidQueue());
+        WriterManager writerManager = new WriterManager();
+        writerManager.startWriters(consumerManager.getValidQueue(), consumerManager.getInvalidQueue());
 
         ExecutorServiceManager.shutdownExecutor(producerManager.getExecutor(), "Producers", durationMillis, TimeUnit.MILLISECONDS);
         producerManager.shutdownProducers();
 
-        ExecutorServiceManager.shutdownExecutor(consumerManager.getExecutor(), "Consumers", 1, TimeUnit.MINUTES);
+        ExecutorServiceManager.shutdownExecutor(consumerManager.getExecutor(), "Consumers", 10, TimeUnit.MINUTES);
         consumerManager.shutdownConsumers();
         writerManager.shutdownWriterExecutor();
 
         int producedMessages = producerManager.getProducedMessageCount();
         int consumedMessages = consumerManager.getConsumedMessageCount();
         long durationInSecond = TimeUnit.SECONDS.convert(allProgramWatch.stop(), TimeUnit.MILLISECONDS);
-        logger.info("Produced messages {}", producedMessages);
-        logger.info("Consumed messages {}", consumedMessages);
-        logger.info("Speed {}",messageCount/durationInSecond);
-        logger.info("All task completed in {} seconds", durationInSecond);
+        logger.info("------------PERFORMANCE------------");
+        logger.info("**Produced messages {}", producedMessages);
+        logger.info("**Consumed messages {}", consumedMessages);
+        logger.info("**Speed {}MPS",messageCount/durationInSecond);
+        logger.info("**All task completed in {} seconds", durationInSecond);
     }
 }
 

@@ -59,13 +59,13 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     private MessageProducer createMessageProducer(Session session, Destination destination) throws JMSException {
         MessageProducer producer = session.createProducer(destination);
         producer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
-        producer.setDisableMessageID(true);
         producer.setDisableMessageTimestamp(true);
         return producer;
     }
 
     public void sendTextMessage(String text) {
         try {
+            logger.trace("Send message {}",text);
             TextMessage textMessage = session.createTextMessage(text);
             messageProducer.send(textMessage);
             messagesSent++;
