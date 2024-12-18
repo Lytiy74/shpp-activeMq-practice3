@@ -5,16 +5,18 @@ import org.slf4j.LoggerFactory;
 import shpp.azaika.util.UserPojoGenerator;
 
 import javax.jms.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
-    private final AtomicInteger messagesSent = new AtomicInteger(0);
-    private final AtomicInteger messagesToSend;
+    private int messagesSent;
+    private int messagesToSend;
 
     private final ConnectionFactory connectionFactory;
     private Connection connection;
@@ -32,9 +34,13 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         if (userPojoGenerator == null) {
             throw new IllegalArgumentException("UserPojoGenerator must not be null");
         }
+        if (messagesToSend < 0) {
+            throw new IllegalArgumentException("Messages to send must be non-negative");
+        }
+
         this.connectionFactory = connectionFactory;
         this.pojoGenerator = userPojoGenerator;
-        this.messagesToSend = new AtomicInteger(messagesToSend);
+        this.messagesToSend = messagesToSend;
     }
 
     public void connect(String destinationName) throws JMSException {
@@ -53,6 +59,8 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     private MessageProducer createMessageProducer(Session session, Destination destination) throws JMSException {
         MessageProducer producer = session.createProducer(destination);
         producer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
+        producer.setDisableMessageID(true);
+        producer.setDisableMessageTimestamp(true);
         return producer;
     }
 
@@ -60,8 +68,9 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         try {
             TextMessage textMessage = session.createTextMessage(text);
             messageProducer.send(textMessage);
-            messagesSent.getAndIncrement();
+            messagesSent++;
         } catch (JMSException e) {
+            logger.error("Failed to send message: {}", text, e);
             throw new JMSRuntimeException(e.getMessage());
         }
 
@@ -73,24 +82,37 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     }
 
     public void sendPoisonPill(int consumersQty) {
-        for (int i = 0; i < consumersQty; i++) {
-            sendPoisonPill();
+        IntStream.range(0, consumersQty).forEach(i -> sendPoisonPill());
+    }
+
+    private void sendMessagesInBatch() {
+        List<String> batch = new ArrayList<>();
+        Stream.generate(pojoGenerator::generateUserPojoAsJson)
+                .limit(messagesToSend)
+                .takeWhile(msg -> !Thread.currentThread().isInterrupted())
+                .forEach(msg -> {
+                    batch.add(msg);
+                    if (batch.size() >= 1000) {
+                        sendBatch(batch);
+                        batch.clear();
+                    }
+                });
+
+        if (!batch.isEmpty()) {
+            sendBatch(batch);
         }
     }
 
-    private void sendMessages() {
-        Stream.generate(pojoGenerator::generateUserPojoAsJson)
-                .takeWhile(o -> 0 < messagesToSend.getAndDecrement())
-                .takeWhile(msg -> !Thread.currentThread().isInterrupted())
-                .forEach(this::sendTextMessage);
+    private void sendBatch(List<String> batch) {
+        batch.forEach(this::sendTextMessage);
     }
 
     @Override
     public Integer call() {
         logger.info("Producer thread started");
-        sendMessages();
+        sendMessagesInBatch();
         logger.info("{} has been finished.", Thread.currentThread().getName());
-        return messagesSent.get();
+        return messagesSent;
     }
 
     @Override
@@ -104,6 +126,6 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         }
     }
     public int getProducedMessageCount() {
-        return messagesSent.get();
+        return messagesSent;
     }
 }
