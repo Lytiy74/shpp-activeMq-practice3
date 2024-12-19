@@ -17,7 +17,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
     private int messagesSent;
-    private int messagesToSend;
+    private final int messagesToSend;
 
     private final long durationInMillis;
     private StopWatch stopWatch;
