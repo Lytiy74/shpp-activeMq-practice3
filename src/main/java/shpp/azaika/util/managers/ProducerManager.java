@@ -14,19 +14,18 @@ public class ProducerManager {
     private final List<Producer> producers = new ArrayList<>();
     private final ExecutorService producerExecutor;
     private final int consumersQty;
-
     public ProducerManager(int producerQty, int consumersQty) {
         producerExecutor = Executors.newFixedThreadPool(producerQty);
         this.consumersQty = consumersQty;
     }
 
-    public void startProducers(ActiveMQConnectionFactory connectionFactory, String destinationName, int producerQty, int messagesToSend) throws JMSException {
+    public void startProducers(ActiveMQConnectionFactory connectionFactory, String destinationName, int producerQty, int messagesToSend, long durationInMillis) throws JMSException {
         int messagesPerThread = messagesToSend / producerQty;
         int pendingMessages = messagesToSend % producerQty;
 
         for (int i = 0; i < producerQty; i++) {
             int messagesForThisThread = (i == producerQty - 1) ? messagesPerThread + pendingMessages : messagesPerThread;
-            Producer producer = new Producer(connectionFactory, new UserPojoGenerator(), messagesForThisThread);
+            Producer producer = new Producer(connectionFactory, new UserPojoGenerator(), messagesForThisThread, durationInMillis);
             producers.add(producer);
             producer.connect(destinationName);
             producerExecutor.submit(producer);

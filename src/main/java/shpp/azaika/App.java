@@ -40,7 +40,7 @@ public class App {
         int threadsConsumer = Integer.parseInt(propertyManager.getProperty("threads_consumer"));
 
         ProducerManager producerManager = new ProducerManager(threadsProducer, threadsConsumer);
-        producerManager.startProducers(connectionFactory, destinationName, threadsProducer,messageCount);
+        producerManager.startProducers(connectionFactory, destinationName, threadsProducer, messageCount, durationMillis);
 
         ConsumerManager consumerManager = new ConsumerManager(threadsConsumer);
         consumerManager.startConsumers(connectionFactory,destinationName,threadsConsumer);
