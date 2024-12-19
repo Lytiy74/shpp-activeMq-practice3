@@ -49,10 +49,10 @@ public class App {
         writerManager.startWriters(consumerManager.getValidQueue(), consumerManager.getInvalidQueue());
 
         ExecutorServiceManager.shutdownExecutor(producerManager.getExecutor(), "Producers", durationMillis, TimeUnit.MILLISECONDS);
-        producerManager.shutdownProducers();
+        producerManager.closeProducers();
 
         ExecutorServiceManager.shutdownExecutor(consumerManager.getExecutor(), "Consumers", 10, TimeUnit.MINUTES);
-        consumerManager.shutdownConsumers();
+        consumerManager.closeConsumers();
         writerManager.shutdownWriterExecutor();
 
         int producedMessages = producerManager.getProducedMessageCount();
