@@ -101,6 +101,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
                 .forEach(msg -> {
                     batch.add(msg);
                     if (batch.size() >= 1000) {
+                        logger.info("Send batch of 1000 msg");
                         sendBatch(batch);
                         batch.clear();
                     }

@@ -86,8 +86,8 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
                     break;
                 }
                 messagesConsumed.incrementAndGet();
-                if (messagesConsumed.get() % 1000 == 0) {
-                    logger.debug("Processed messages count: {}", messagesConsumed.get());
+                if (messagesConsumed.get() % 10000 == 0) {
+                    logger.info("Processed messages count: {}", messagesConsumed.get());
                 }
             }
         } catch (Exception e) {
