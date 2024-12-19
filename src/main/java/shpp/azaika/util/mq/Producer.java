@@ -9,6 +9,7 @@ import javax.jms.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -16,7 +17,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(Producer.class);
 
-    private int messagesSent;
+    private final AtomicInteger messagesSent = new AtomicInteger(0);
     private final int messagesToSend;
 
     private final long durationInMillis;
@@ -75,7 +76,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
             logger.trace("Send message {}",text);
             TextMessage textMessage = session.createTextMessage(text);
             messageProducer.send(textMessage);
-            messagesSent++;
+            messagesSent.getAndIncrement();
         } catch (JMSException e) {
             logger.error("Failed to send message: {}", text, e);
             throw new JMSRuntimeException(e.getMessage());
@@ -120,7 +121,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         stopWatch = new StopWatch(true);
         sendMessagesInBatch();
         logger.info("{} has been finished.", Thread.currentThread().getName());
-        return messagesSent;
+        return messagesSent.get();
     }
 
     @Override
@@ -134,6 +135,6 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         }
     }
     public int getProducedMessageCount() {
-        return messagesSent;
+        return messagesSent.get();
     }
 }
