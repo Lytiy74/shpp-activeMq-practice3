@@ -1,5 +1,6 @@
 package shpp.azaika.util.mq;
 
+import org.apache.activemq.util.StopWatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import shpp.azaika.util.UserPojoGenerator;
@@ -18,6 +19,9 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     private int messagesSent;
     private int messagesToSend;
 
+    private final long durationInMillis;
+    private StopWatch stopWatch;
+
     private final ConnectionFactory connectionFactory;
     private Connection connection;
     private Session session;
@@ -27,7 +31,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     private final UserPojoGenerator pojoGenerator;
 
-    public Producer(ConnectionFactory connectionFactory, UserPojoGenerator userPojoGenerator, int messagesToSend) {
+    public Producer(ConnectionFactory connectionFactory, UserPojoGenerator userPojoGenerator, int messagesToSend, long durationInMillis) {
         if (connectionFactory == null) {
             throw new IllegalArgumentException("ConnectionFactory must not be null");
         }
@@ -37,10 +41,13 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         if (messagesToSend < 0) {
             throw new IllegalArgumentException("Messages to send must be non-negative");
         }
-
+        if (durationInMillis < 0){
+            throw new IllegalArgumentException("Duration to execute must be non-negative");
+        }
         this.connectionFactory = connectionFactory;
         this.pojoGenerator = userPojoGenerator;
         this.messagesToSend = messagesToSend;
+        this.durationInMillis = durationInMillis;
     }
 
     public void connect(String destinationName) throws JMSException {
@@ -89,7 +96,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
         List<String> batch = new ArrayList<>();
         Stream.generate(pojoGenerator::generateUserPojoAsJson)
                 .limit(messagesToSend)
-                .takeWhile(msg -> !Thread.currentThread().isInterrupted())
+                .takeWhile(o-> stopWatch.taken() < durationInMillis)
                 .forEach(msg -> {
                     batch.add(msg);
                     if (batch.size() >= 1000) {
@@ -98,7 +105,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
                     }
                 });
 
-        if (!batch.isEmpty()) {
+        if (!batch.isEmpty() && stopWatch.taken() < durationInMillis) {
             sendBatch(batch);
         }
     }
@@ -110,6 +117,7 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
     @Override
     public Integer call() {
         logger.info("Producer thread started");
+        stopWatch = new StopWatch(true);
         sendMessagesInBatch();
         logger.info("{} has been finished.", Thread.currentThread().getName());
         return messagesSent;
