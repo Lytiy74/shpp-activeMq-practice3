@@ -44,7 +44,7 @@ public class ConsumerManager {
         return consumerExecutor;
     }
 
-    public void shutdownConsumers() {
+    public void closeConsumers() {
         consumers.forEach(Consumer::close);
     }
 

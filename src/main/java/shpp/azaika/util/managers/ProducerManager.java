@@ -36,7 +36,7 @@ public class ProducerManager {
         return producerExecutor;
     }
 
-    public void shutdownProducers() {
+    public void closeProducers() {
         producers.getFirst().sendPoisonPill(consumersQty);
         producers.forEach(Producer::close);
     }
