@@ -1,22 +1,20 @@
 package shpp.azaika.util.mq;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import shpp.azaika.util.UserPojoGenerator;
 
 import javax.jms.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import static org.mockito.Mockito.*;
 
 class ProducerTest {
     @Mock
     ConnectionFactory connectionFactoryMock;
-
-    @Mock
-    BlockingQueue<String> messageSourceQueueMock;
 
     @Mock
     Connection connectionMock;
@@ -28,10 +26,13 @@ class ProducerTest {
     Queue destinationMock;
 
     @Mock
-    MessageProducer producerMock;
+    MessageProducer messageProducerMock;
 
     @Mock
     TextMessage textMessageMock;
+
+    @Mock
+    UserPojoGenerator userPojoGeneratorMock;
 
 
     @BeforeEach
@@ -40,14 +41,15 @@ class ProducerTest {
         when(connectionFactoryMock.createConnection()).thenReturn(connectionMock);
         when(connectionMock.createSession(false, Session.AUTO_ACKNOWLEDGE)).thenReturn(sessionMock);
         when(sessionMock.createQueue("TestQueue")).thenReturn(destinationMock);
-        when(sessionMock.createProducer(destinationMock)).thenReturn(producerMock);
+        when(sessionMock.createProducer(destinationMock)).thenReturn(messageProducerMock);
         when(sessionMock.createTextMessage(anyString())).thenReturn(textMessageMock);
+        when(userPojoGeneratorMock.generateUserPojoAsJson()).thenReturn((""));
 
     }
 
     @Test
     void connect() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1, 100);
 
         producer.connect("TestQueue");
         verify(connectionMock).start();
@@ -57,7 +59,7 @@ class ProducerTest {
 
     @Test
     void sendTextMessage() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1, 100);
         producer.connect("TestQueue");
         TextMessage textMessageMock = mock(TextMessage.class);
         when(sessionMock.createTextMessage("Test message")).thenReturn(textMessageMock);
@@ -65,12 +67,12 @@ class ProducerTest {
         producer.sendTextMessage("Test message");
 
         verify(sessionMock).createTextMessage("Test message");
-        verify(producerMock).send(textMessageMock);
+        verify(messageProducerMock).send(textMessageMock);
     }
 
     @Test
     void sendPoisonPill() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1, 100);
         producer.connect("TestQueue");
 
         TextMessage poisonPillMessageMock = mock(TextMessage.class);
@@ -79,31 +81,50 @@ class ProducerTest {
         producer.sendPoisonPill();
 
         verify(sessionMock).createTextMessage(Producer.POISON_PILL);
-        verify(producerMock).send(poisonPillMessageMock);
+        verify(messageProducerMock).send(poisonPillMessageMock);
     }
 
     @Test
     void close() throws JMSException {
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1, 100);
         producer.connect("TestQueue");
 
         producer.close();
 
-        // Перевіряємо, чи були закриті всі ресурси
-        verify(producerMock).close();
+        verify(messageProducerMock).close();
         verify(sessionMock).close();
         verify(connectionMock).close();
     }
 
     @Test
     void call() throws Exception {
-        when(messageSourceQueueMock.poll(1, TimeUnit.SECONDS)).thenReturn("Message 1", "Message 2", null);
-
-        Producer producer = new Producer(connectionFactoryMock, messageSourceQueueMock);
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1, 100);
         producer.connect("TestQueue");
 
         producer.call();
 
-        verify(producerMock, times(3)).send(any(TextMessage.class));
+        verify(messageProducerMock, times(1)).send(any(TextMessage.class));
     }
+
+    @Test
+    void callShouldCompleteWithinTimeLimit() throws JMSException {
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 10000, 100);
+        producer.connect("TestQueue");
+
+        Assertions.assertTimeout(Duration.ofMillis(150), producer::call, "Method exceeded allowed execution time");
+    }
+
+    @Test
+    void callShouldRespectDurationLimit() throws JMSException {
+        Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 1000000, 50); // 50 ms
+        producer.connect("TestQueue");
+
+        producer.call();
+
+        // Перевіряємо, що виклик send обмежений часом (повинно бути менше, ніж максимальна кількість повідомлень)
+        verify(messageProducerMock, atMost(1000)).send(any(TextMessage.class));
+    }
+
+
+
 }

@@ -49,6 +49,22 @@ public class UserPojo {
         return date;
     }
 
+    public void setName(@NotNull @Length(min = 7) @Pattern(regexp = "(?iu).*[aа].*", message = "Name must contains at least one letter 'A'") String name) {
+        this.name = name;
+    }
+
+    public void setEddr(@NotNull String eddr) {
+        this.eddr = eddr;
+    }
+
+    public void setCount(@Min(value = 10, message = "Count must be >= 10") int count) {
+        this.count = count;
+    }
+
+    public void setDate(@NotNull LocalDate date) {
+        this.date = date;
+    }
+
     @Override
     public String toString() {
         return "UserPojo{" + "name='" + name + '\'' +
