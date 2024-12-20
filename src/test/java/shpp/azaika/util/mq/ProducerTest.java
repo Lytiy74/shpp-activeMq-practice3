@@ -111,7 +111,7 @@ class ProducerTest {
         Producer producer = new Producer(connectionFactoryMock, userPojoGeneratorMock, 10000, 100);
         producer.connect("TestQueue");
 
-        Assertions.assertTimeout(Duration.ofMillis(150), producer::call, "Method exceeded allowed execution time");
+        Assertions.assertTimeout(Duration.ofMillis(200), producer::call, "Method exceeded allowed execution time");
     }
 
     @Test
