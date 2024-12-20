@@ -73,7 +73,9 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
 
     public void sendTextMessage(String text) {
         try {
-            logger.trace("Send message {}",text);
+            if(messagesSent.get() % 10000 == 0) {
+                logger.info("Thread {} sent {} messages",Thread.currentThread().getName(),messagesSent.get());
+            }
             TextMessage textMessage = session.createTextMessage(text);
             messageProducer.send(textMessage);
             messagesSent.getAndIncrement();
@@ -100,13 +102,11 @@ public final class Producer implements Callable<Integer>, AutoCloseable {
                 .takeWhile(o-> stopWatch.taken() < durationInMillis)
                 .forEach(msg -> {
                     batch.add(msg);
-                    if(messagesSent.get() % 10000 == 0) {
-                        logger.info("Thread {} sent {} messages",Thread.currentThread().getName(),messagesSent.get());
-                    }
                     if (batch.size() >= 10000) {
                         sendBatch(batch);
                         batch.clear();
                     }
+
                 });
 
         if (!batch.isEmpty() && stopWatch.taken() < durationInMillis) {
