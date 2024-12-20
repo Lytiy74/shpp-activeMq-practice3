@@ -87,7 +87,7 @@ public final class Consumer implements Callable<Integer>, AutoCloseable {
                 }
                 messagesConsumed.incrementAndGet();
                 if (messagesConsumed.get() % 10000 == 0) {
-                    logger.info("Processed messages count: {}", messagesConsumed.get());
+                    logger.info("Thread {} consumed {} messages",Thread.currentThread().getName(),messagesConsumed.get());
                 }
             }
         } catch (Exception e) {
